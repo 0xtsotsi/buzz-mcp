@@ -2,14 +2,14 @@
  * Unit tests for the buzz_post_message tool using a stubbed global fetch.
  * Avoids any network or local-relay dependency.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerPostMessageTool } from "../../src/tools/messages.js";
 
-const SECRET =
-  "0000000000000000000000000000000000000000000000000000000000000001";
+const SECRET = "0000000000000000000000000000000000000000000000000000000000000001";
 const RELAY = "https://relay.test";
 
 interface FetchCall {
@@ -177,7 +177,6 @@ describe("buzz_post_message tool", () => {
     expect(parsed.raw).toEqual({ weird: "shape" });
     await client.close();
   });
-
 
   it("rejects emoji content that exceeds the 32KB byte cap (not char cap)", async () => {
     fetchSpy = makeFetchSpy(async () => new Response("{}", { status: 202 }));

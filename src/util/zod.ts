@@ -19,9 +19,7 @@ const BECH32_DATA_REGEX = /^[023456789ac-hj-np-z]+$/;
  * Generic 64-char lowercase hex string. The base shape for `pubkey` and
  * `eventId`.
  */
-export const hex64Schema = z
-  .string()
-  .regex(HEX64_REGEX, "must be 64 lowercase hex characters");
+export const hex64Schema = z.string().regex(HEX64_REGEX, "must be 64 lowercase hex characters");
 export type Hex64String = z.infer<typeof hex64Schema>;
 
 /**
@@ -60,18 +58,16 @@ export type NsecString = z.infer<typeof nsecSchema>;
  *   - parses via `Date.parse` to a real instant, AND
  *   - is within ±1 year of `Date.now()` (specifically: > now − 1y and < now + 60s).
  */
-export const isoTimestampSchema = z
-  .string()
-  .refine(
-    (s) => {
-      const t = Date.parse(s);
-      if (Number.isNaN(t)) {
-        return false;
-      }
-      const now = Date.now();
-      const oneYearMs = 365 * 24 * 60 * 60 * 1000;
-      return t > now - oneYearMs && t < now + 60_000;
-    },
-    { message: "must be a valid ISO timestamp within ±1y of now" },
-  );
+export const isoTimestampSchema = z.string().refine(
+  (s) => {
+    const t = Date.parse(s);
+    if (Number.isNaN(t)) {
+      return false;
+    }
+    const now = Date.now();
+    const oneYearMs = 365 * 24 * 60 * 60 * 1000;
+    return t > now - oneYearMs && t < now + 60_000;
+  },
+  { message: "must be a valid ISO timestamp within ±1y of now" },
+);
 export type IsoTimestampString = z.infer<typeof isoTimestampSchema>;

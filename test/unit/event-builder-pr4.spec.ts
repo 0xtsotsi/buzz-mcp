@@ -6,8 +6,7 @@
  *   - buildWorkflowApproval (kind 46030 approve / 46031 deny)
  *   - buildThreadSummary   (kind 39005)
  */
-import { describe, it, expect } from "vitest";
-import { getPublicKey } from "../../src/relay/signer.js";
+import { describe, expect, it } from "vitest";
 import {
   buildAddMember,
   buildCreateChannel,
@@ -15,6 +14,7 @@ import {
   buildThreadSummary,
   buildWorkflowApproval,
 } from "../../src/relay/event-builder.js";
+import { getPublicKey } from "../../src/relay/signer.js";
 
 const SECRET = "0000000000000000000000000000000000000000000000000000000000000001";
 const PUBKEY = getPublicKey(SECRET);

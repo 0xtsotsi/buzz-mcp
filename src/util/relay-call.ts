@@ -10,7 +10,7 @@
  * This module centralizes those. Adding a new tool should not require
  * re-implementing the timeout/ack/error dance.
  */
-import { signedFetch, type SignedFetchOptions } from "../relay/client.js";
+import { type SignedFetchOptions, signedFetch } from "../relay/client.js";
 
 /** Default per-tool timeout, in milliseconds. */
 export const DEFAULT_TOOL_TIMEOUT_MS = 5_000;

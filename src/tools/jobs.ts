@@ -5,14 +5,11 @@
  * - `buzz_approve_workflow` posts a kind:46030 (approve) or kind:46031 (deny)
  *   event with the workflow id as an `e`-tag reference.
  */
-import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { type NsecOrHex } from "../relay/signer.js";
-import {
-  buildJob,
-  buildWorkflowApproval,
-} from "../relay/event-builder.js";
+import { z } from "zod";
+import { buildJob, buildWorkflowApproval } from "../relay/event-builder.js";
+import type { NsecOrHex } from "../relay/signer.js";
 import { signedFetchWithTimeout } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
@@ -33,8 +30,8 @@ export function registerCreateJobTool(
   server.tool(
     "buzz_create_job",
     "Create a job (kind:43001 KIND_JOB_REQUEST). Returns the event id and the " +
-      "job payload. Budget is embedded as `[\"amount\", …]` and due-at as " +
-      "`[\"due\", …]`.",
+      'job payload. Budget is embedded as `["amount", …]` and due-at as ' +
+      '`["due", …]`.',
     {
       title: z.string().min(1).max(200).describe("Job title. Required."),
       description: z
@@ -42,17 +39,8 @@ export function registerCreateJobTool(
         .min(1)
         .max(32 * 1024)
         .describe("Job description (event content). Required."),
-      budget: z
-        .number()
-        .int()
-        .nonnegative()
-        .optional()
-        .describe("Optional budget (numeric)."),
-      dueAt: z
-        .iso
-        .datetime()
-        .optional()
-        .describe("Optional due-at (ISO-8601 timestamp string)."),
+      budget: z.number().int().nonnegative().optional().describe("Optional budget (numeric)."),
+      dueAt: z.iso.datetime().optional().describe("Optional due-at (ISO-8601 timestamp string)."),
     },
     async (args) => {
       const event = await buildJob({
@@ -135,7 +123,7 @@ export function registerApproveWorkflowTool(
       decision: z
         .enum(["approve", "reject"])
         .default("approve")
-        .describe("Approval decision (default \"approve\")."),
+        .describe('Approval decision (default "approve").'),
       comment: z
         .string()
         .max(2048)

@@ -9,13 +9,14 @@
  *   - sha256 is computed client-side and matches
  *   - PUT to /media/upload preferred over /upload (404 falls through)
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createHash } from "node:crypto";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { registerUploadMediaTool } from "../../src/tools/media.js";
 
@@ -31,9 +32,7 @@ interface FetchCall {
   };
 }
 
-function makeFetchSpy(
-  impl: (url: string, init: RequestInit) => Promise<Response> | Response,
-) {
+function makeFetchSpy(impl: (url: string, init: RequestInit) => Promise<Response> | Response) {
   const calls: FetchCall[] = [];
   const spy = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const u = typeof url === "string" ? url : url.toString();
@@ -73,10 +72,7 @@ async function makeServerAndClient() {
     { capabilities: {}, instructions: "test" },
   );
   registerUploadMediaTool(server, SECRET, RELAY);
-  const client = new Client(
-    { name: "test-client", version: "0.0.0" },
-    { capabilities: {} },
-  );
+  const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await Promise.all([client.connect(ct), server.connect(st)]);
   return { server, client };
@@ -112,10 +108,11 @@ describe("buzz_upload_media", () => {
     const data = Buffer.from(bytes).toString("base64");
     const sha = createHash("sha256").update(bytes).digest("hex");
 
-    fetchSpy = makeFetchSpy(async () =>
-      new Response(JSON.stringify({ url: "https://relay.test/media/abc" }), {
-        status: 201,
-      }),
+    fetchSpy = makeFetchSpy(
+      async () =>
+        new Response(JSON.stringify({ url: "https://relay.test/media/abc" }), {
+          status: 201,
+        }),
     );
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
@@ -157,10 +154,11 @@ describe("buzz_upload_media", () => {
     writeFileSync(filePath, bytes);
     const sha = createHash("sha256").update(bytes).digest("hex");
 
-    fetchSpy = makeFetchSpy(async () =>
-      new Response(JSON.stringify({ url: "https://relay.test/media/x" }), {
-        status: 201,
-      }),
+    fetchSpy = makeFetchSpy(
+      async () =>
+        new Response(JSON.stringify({ url: "https://relay.test/media/x" }), {
+          status: 201,
+        }),
     );
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
@@ -265,9 +263,7 @@ describe("buzz_upload_media", () => {
 
   it("surfaces a non-404 error response as a tool error", async () => {
     const data = Buffer.from(new Uint8Array([1])).toString("base64");
-    fetchSpy = makeFetchSpy(
-      async () => new Response("forbidden", { status: 403 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response("forbidden", { status: 403 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient();

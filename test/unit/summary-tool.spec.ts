@@ -1,10 +1,11 @@
 /**
  * Unit tests for buzz_post_thread_summary (kind:39005).
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { registerPostThreadSummaryTool } from "../../src/tools/summaries.js";
 
@@ -16,9 +17,7 @@ interface FetchCall {
   init: { method: string; headers: Record<string, string>; body: string };
 }
 
-function makeFetchSpy(
-  impl: (url: string, init: RequestInit) => Promise<Response> | Response,
-) {
+function makeFetchSpy(impl: (url: string, init: RequestInit) => Promise<Response> | Response) {
   const calls: FetchCall[] = [];
   const spy = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const u = typeof url === "string" ? url : url.toString();
@@ -53,10 +52,7 @@ async function makeServerAndClient() {
     { capabilities: {}, instructions: "test" },
   );
   registerPostThreadSummaryTool(server, SECRET, RELAY);
-  const client = new Client(
-    { name: "test-client", version: "0.0.0" },
-    { capabilities: {} },
-  );
+  const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await Promise.all([client.connect(ct), server.connect(st)]);
   return { server, client };
@@ -99,8 +95,7 @@ describe("buzz_post_thread_summary", () => {
     expect(fetchSpy.calls).toHaveLength(1);
     const call = fetchSpy.calls[0];
     expect(call.url).toBe(`${RELAY}/events`);
-    const auth =
-      call.init.headers["authorization"] ?? call.init.headers["Authorization"];
+    const auth = call.init.headers["authorization"] ?? call.init.headers["Authorization"];
     expect(auth).toMatch(/^Nostr /);
 
     const body = JSON.parse(call.init.body);
@@ -109,12 +104,7 @@ describe("buzz_post_thread_summary", () => {
     expect(body.sig).toMatch(/^[0-9a-f]{128}$/);
     expect(body.content).toBe("TL;DR: shipped.");
     const tags = body.tags as string[][];
-    expect(tags.find((t) => t[0] === "e")).toEqual([
-      "e",
-      "1".repeat(64),
-      "",
-      "root",
-    ]);
+    expect(tags.find((t) => t[0] === "e")).toEqual(["e", "1".repeat(64), "", "root"]);
 
     const parsed = parseText(result) as {
       event_id: string;
@@ -127,9 +117,7 @@ describe("buzz_post_thread_summary", () => {
   });
 
   it("surfaces a 4xx as a tool error", async () => {
-    fetchSpy = makeFetchSpy(
-      async () => new Response("nope", { status: 500 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response("nope", { status: 500 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient();
@@ -144,8 +132,6 @@ describe("buzz_post_thread_summary", () => {
     expect(text).toMatch(/HTTP 500/);
     await client.close();
   });
-
-
 
   it("rejects multibyte summary that exceeds 32KB byte cap", async () => {
     fetchSpy = makeFetchSpy(async () => new Response("{}", { status: 202 }));

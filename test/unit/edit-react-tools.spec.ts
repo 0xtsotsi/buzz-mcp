@@ -2,15 +2,13 @@
  * Unit tests for the two PR-#4 message tools added to src/tools/messages.ts:
  *   buzz_edit_message (kind:40003) and buzz_react (kind:7).
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  registerEditMessageTool,
-  registerReactTool,
-} from "../../src/tools/messages.js";
+import { registerEditMessageTool, registerReactTool } from "../../src/tools/messages.js";
 
 const SECRET = "0000000000000000000000000000000000000000000000000000000000000001";
 const RELAY = "https://relay.test";
@@ -20,9 +18,7 @@ interface FetchCall {
   init: { method: string; headers: Record<string, string>; body: string };
 }
 
-function makeFetchSpy(
-  impl: (url: string, init: RequestInit) => Promise<Response> | Response,
-) {
+function makeFetchSpy(impl: (url: string, init: RequestInit) => Promise<Response> | Response) {
   const calls: FetchCall[] = [];
   const spy = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const u = typeof url === "string" ? url : url.toString();
@@ -51,11 +47,7 @@ function makeFetchSpy(
   return { spy, calls };
 }
 
-type RegisterFn = (
-  server: McpServer,
-  secret: typeof SECRET,
-  relay: string,
-) => void;
+type RegisterFn = (server: McpServer, secret: typeof SECRET, relay: string) => void;
 
 async function makeServerAndClient(register: RegisterFn) {
   const server = new McpServer(
@@ -63,10 +55,7 @@ async function makeServerAndClient(register: RegisterFn) {
     { capabilities: {}, instructions: "test" },
   );
   register(server, SECRET, RELAY);
-  const client = new Client(
-    { name: "test-client", version: "0.0.0" },
-    { capabilities: {} },
-  );
+  const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await Promise.all([client.connect(ct), server.connect(st)]);
   return { server, client };
@@ -110,8 +99,7 @@ describe("buzz_edit_message", () => {
     expect(fetchSpy.calls).toHaveLength(1);
     const call = fetchSpy.calls[0];
     expect(call.url).toBe(`${RELAY}/events`);
-    const auth =
-      call.init.headers["authorization"] ?? call.init.headers["Authorization"];
+    const auth = call.init.headers["authorization"] ?? call.init.headers["Authorization"];
     expect(auth).toMatch(/^Nostr /);
 
     const body = JSON.parse(call.init.body);
@@ -119,12 +107,7 @@ describe("buzz_edit_message", () => {
     expect(body.id).toMatch(/^[0-9a-f]{64}$/);
     expect(body.sig).toMatch(/^[0-9a-f]{128}$/);
     const tags = body.tags as string[][];
-    expect(tags.find((t) => t[0] === "e")).toEqual([
-      "e",
-      "1".repeat(64),
-      "",
-      "edit",
-    ]);
+    expect(tags.find((t) => t[0] === "e")).toEqual(["e", "1".repeat(64), "", "edit"]);
     expect(body.content).toBe("edited body");
 
     const parsed = parseText(result) as {
@@ -139,9 +122,7 @@ describe("buzz_edit_message", () => {
   });
 
   it("surfaces a 4xx response as a tool error", async () => {
-    fetchSpy = makeFetchSpy(
-      async () => new Response("nope", { status: 422 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response("nope", { status: 422 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient(registerEditMessageTool);
@@ -203,9 +184,7 @@ describe("buzz_react", () => {
   });
 
   it("rejects emoji longer than 16 chars at the Zod layer", async () => {
-    fetchSpy = makeFetchSpy(
-      async () => new Response("", { status: 200 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response("", { status: 200 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient(registerReactTool);

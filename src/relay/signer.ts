@@ -30,9 +30,7 @@ const HEX64_REGEX = /^[0-9a-f]{64}$/;
 const NSEC_REGEX = /^nsec1[023456789ac-hj-np-z]{58}$/;
 
 /** Strict 64-char lowercase hex. */
-const hex64Validator = z
-  .string()
-  .regex(HEX64_REGEX, "must be 64 lowercase hex characters");
+const hex64Validator = z.string().regex(HEX64_REGEX, "must be 64 lowercase hex characters");
 
 /** Either 64-char hex or a canonical bech32 `nsec1…`. */
 const nsecOrHexValidator = z.union([
@@ -40,18 +38,13 @@ const nsecOrHexValidator = z.union([
   z.string().regex(NSEC_REGEX, "must be 64-char hex or nsec1… bech32"),
 ]);
 
-const kindValidator = z
-  .number()
-  .int()
-  .min(0)
-  .max(65535, "kind must fit in a uint16");
+const kindValidator = z.number().int().min(0).max(65535, "kind must fit in a uint16");
 
 const tagsValidator = z
   .array(z.array(z.string()))
-  .refine(
-    (tags) => tags.every((t) => t.length >= 1),
-    { message: "each tag must have at least one element (the name)" },
-  );
+  .refine((tags) => tags.every((t) => t.length >= 1), {
+    message: "each tag must have at least one element (the name)",
+  });
 
 // ─── Event types ───────────────────────────────────────────────────────────
 
@@ -96,15 +89,11 @@ export function encodeNsec(secret: NsecOrHex): Hex64 {
   // nsec1… bech32 path — defer the checksum check to nip19.
   const decoded = nip19Decode(parsed);
   if (decoded.type !== "nsec") {
-    throw new Error(
-      `encodeNsec: expected nsec1… but got nip19 type "${decoded.type}"`,
-    );
+    throw new Error(`encodeNsec: expected nsec1… but got nip19 type "${decoded.type}"`);
   }
   const bytes = decoded.data;
   if (!(bytes instanceof Uint8Array) || bytes.length !== 32) {
-    throw new Error(
-      `encodeNsec: nsec payload must decode to 32 bytes (got ${bytes?.length})`,
-    );
+    throw new Error(`encodeNsec: nsec payload must decode to 32 bytes (got ${bytes?.length})`);
   }
   return asHex64(bytesToHex(bytes));
 }
@@ -127,14 +116,7 @@ function serializeEvent(evt: {
   tags: string[][];
   content: string;
 }): string {
-  return JSON.stringify([
-    0,
-    evt.pubkey,
-    evt.created_at,
-    evt.kind,
-    evt.tags,
-    evt.content,
-  ]);
+  return JSON.stringify([0, evt.pubkey, evt.created_at, evt.kind, evt.tags, evt.content]);
 }
 
 // ─── Public API ────────────────────────────────────────────────────────────
@@ -168,10 +150,7 @@ export function signSchnorr(secret: NsecOrHex, msg: Uint8Array): Uint8Array {
  * @throws if `secret` is not 64-char hex or a valid `nsec1…`, or if `event`
  * has out-of-range fields.
  */
-export function signEvent(
-  secret: NsecOrHex,
-  event: UnsignedEvent,
-): NostrEvent {
+export function signEvent(secret: NsecOrHex, event: UnsignedEvent): NostrEvent {
   // Validate the secret up-front so an invalid `secret` fails before any
   // partial work is done.
   const pubkeyHex = event.pubkey ?? getPublicKey(secret);

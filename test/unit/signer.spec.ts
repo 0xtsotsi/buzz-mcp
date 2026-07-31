@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
 import { sha256 } from "@noble/hashes/sha2";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
 import { decode as nip19Decode, nsecEncode } from "nostr-tools/nip19";
+import { describe, expect, it } from "vitest";
 
 import {
   encodeNsec,
@@ -19,10 +19,8 @@ import {
  *
  * This is the same vector that lives in NIP-19 §"Examples".
  */
-const SECRET_HEX =
-  "0000000000000000000000000000000000000000000000000000000000000001";
-const EXPECTED_PUBKEY_HEX =
-  "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+const SECRET_HEX = "0000000000000000000000000000000000000000000000000000000000000001";
+const EXPECTED_PUBKEY_HEX = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
 
 describe("signer", () => {
   describe("getPublicKey", () => {
@@ -157,9 +155,7 @@ describe("signer", () => {
         signed.tags,
         signed.content,
       ]);
-      const recomputedId = bytesToHex(
-        sha256(new TextEncoder().encode(serialized)),
-      );
+      const recomputedId = bytesToHex(sha256(new TextEncoder().encode(serialized)));
       expect(recomputedId).toBe(signed.id);
     });
 
