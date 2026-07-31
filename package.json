@@ -1,0 +1,47 @@
+{
+  "name": "@buzz/mcp",
+  "version": "0.1.0",
+  "description": "TypeScript MCP server for the CorePrt Nostr relay",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "buzz-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "nostr",
+    "coreprt",
+    "relay"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@noble/curves": "^1.4.0",
+    "@noble/hashes": "^1.4.0",
+    "zod": "^4.0.0",
+    "ws": "^8.18.0",
+    "nostr-tools": "^2.7.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0",
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.0.0"
+  }
+}
