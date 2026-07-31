@@ -15,9 +15,11 @@
   ],
   "scripts": {
     "build": "tsc",
+    "prepack": "npm run build",
     "start": "node dist/cli.js",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json"
   },
   "keywords": [
     "mcp",
@@ -31,7 +33,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@noble/curves": "^1.4.0",
     "@noble/hashes": "^1.4.0",
     "zod": "^4.0.0",

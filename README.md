@@ -109,7 +109,7 @@ future PR.
 
 ## Layout
 
-```
+```text
 .
 ├── src/
 │   ├── index.ts        # createServer() factory
