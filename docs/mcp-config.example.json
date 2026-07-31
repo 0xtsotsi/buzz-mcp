@@ -1,0 +1,53 @@
+{
+  "_": "Copy-pasteable GG Coder configs for @buzz/mcp. Three variants live under three top-level keys. Each variant is a complete mcpServers object — copy the inner mcpServers block into your real ~/.gg/mcp.json alongside any existing entries.",
+  "trackA_local_pinned_path": {
+    "_": "Track A — local pinned path. Recommended for development; lets you rebuild & restart in one cycle.",
+    "mcpServers": {
+      "instatic": { "_": "your existing server (unchanged)" },
+      "buzz": {
+        "command": "node",
+        "args": [
+          "/Users/gogetta/Documents/projects/buzz-mcp/dist/cli.js"
+        ],
+        "env": {
+          "BUZZ_PRIVATE_KEY": "${env:BUZZ_PRIVATE_KEY}",
+          "BUZZ_RELAY_URL": "https://coreprt.webrnds.com"
+        }
+      }
+    }
+  },
+  "trackB_npx": {
+    "_": "Track B — npx. Recommended for production / shared machines. npx caches the tarball and updates on every CLI pass.",
+    "mcpServers": {
+      "instatic": { "_": "your existing server (unchanged)" },
+      "buzz": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@buzz/mcp"
+        ],
+        "env": {
+          "BUZZ_PRIVATE_KEY": "${env:BUZZ_PRIVATE_KEY}",
+          "BUZZ_RELAY_URL": "https://coreprt.webrnds.com"
+        }
+      }
+    }
+  },
+  "trackB_npx_raw_env": {
+    "_": "Track B variant — when the MCP client doesn't expand ${env:...} (plain Claude Code / older ggcoder builds). Use ${VAR} raw per spec §7 line 260.",
+    "mcpServers": {
+      "instatic": { "_": "your existing server (unchanged)" },
+      "buzz": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@buzz/mcp"
+        ],
+        "env": {
+          "BUZZ_PRIVATE_KEY": "${BUZZ_PRIVATE_KEY}",
+          "BUZZ_RELAY_URL": "https://coreprt.webrnds.com"
+        }
+      }
+    }
+  }
+}
