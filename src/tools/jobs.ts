@@ -8,36 +8,14 @@
 import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { signedFetch } from "../relay/client.js";
 import { type NsecOrHex } from "../relay/signer.js";
 import {
   buildJob,
   buildWorkflowApproval,
 } from "../relay/event-builder.js";
+import { signedFetchWithTimeout } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
-const TOOL_TIMEOUT_MS = 5_000;
-
-async function withTimeout<T>(
-  p: Promise<T>,
-  ms: number,
-  label: string,
-): Promise<T> {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), ms);
-  try {
-    return await Promise.race([
-      p,
-      new Promise<never>((_, reject) => {
-        ac.signal.addEventListener("abort", () =>
-          reject(new Error(`${label}: aborted after ${ms}ms`)),
-        );
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 /**
  * Register `buzz_create_job`. POSTs a kind:43001 event to `/events`.
@@ -71,9 +49,8 @@ export function registerCreateJobTool(
         .optional()
         .describe("Optional budget (numeric)."),
       dueAt: z
-        .string()
-        .min(1)
-        .max(64)
+        .iso
+        .datetime()
         .optional()
         .describe("Optional due-at (ISO-8601 timestamp string)."),
     },
@@ -88,20 +65,14 @@ export function registerCreateJobTool(
 
       let resp;
       try {
-        resp = await withTimeout(
-          signedFetch(secret, {
-            method: "POST",
-            url: `${relayUrl.replace(/\/$/, "")}/events`,
-            body: JSON.stringify(event),
-            headers: { "content-type": "application/json" },
-          }),
-          TOOL_TIMEOUT_MS,
-          "create job",
-        );
+        resp = await signedFetchWithTimeout(secret, {
+          method: "POST",
+          url: `${relayUrl.replace(/\/$/, "")}/events`,
+          body: JSON.stringify(event),
+          headers: { "content-type": "application/json" },
+        });
       } catch (err) {
-        throw new Error(
-          `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
-        );
+        throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
       }
 
       if (resp.status < 200 || resp.status >= 300) {
@@ -159,9 +130,8 @@ export function registerApproveWorkflowTool(
     {
       workflowId: z
         .string()
-        .min(1)
-        .max(64)
-        .describe("Workflow id. Required."),
+        .regex(/^[0-9a-f]{64}$/, "must be 64 lowercase hex characters")
+        .describe("Workflow id (64-char hex event id). Required."),
       decision: z
         .enum(["approve", "reject"])
         .default("approve")
@@ -182,20 +152,14 @@ export function registerApproveWorkflowTool(
 
       let resp;
       try {
-        resp = await withTimeout(
-          signedFetch(secret, {
-            method: "POST",
-            url: `${relayUrl.replace(/\/$/, "")}/events`,
-            body: JSON.stringify(event),
-            headers: { "content-type": "application/json" },
-          }),
-          TOOL_TIMEOUT_MS,
-          "approve workflow",
-        );
+        resp = await signedFetchWithTimeout(secret, {
+          method: "POST",
+          url: `${relayUrl.replace(/\/$/, "")}/events`,
+          body: JSON.stringify(event),
+          headers: { "content-type": "application/json" },
+        });
       } catch (err) {
-        throw new Error(
-          `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
-        );
+        throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
       }
 
       if (resp.status < 200 || resp.status >= 300) {

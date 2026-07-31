@@ -21,50 +21,41 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve, isAbsolute, relative, sep } from "node:path";
+import { realpathSync, statSync } from "node:fs";
 import process from "node:process";
 
 import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { signedFetch } from "../relay/client.js";
+import { signedFetchWithTimeout } from "../util/relay-call.js";
 import { type NsecOrHex } from "../relay/signer.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
 const TOOL_TIMEOUT_MS = 30_000; // uploads can be slow; 30s ceiling
 const MAX_BYTES = 1024 * 1024; // 1 MiB hard cap
 
-async function withTimeout<T>(
-  p: Promise<T>,
-  ms: number,
-  label: string,
-): Promise<T> {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), ms);
-  try {
-    return await Promise.race([
-      p,
-      new Promise<never>((_, reject) => {
-        ac.signal.addEventListener("abort", () =>
-          reject(new Error(`${label}: aborted after ${ms}ms`)),
-        );
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 /** Reject any path that, when resolved, lies outside the CWD. */
 function ensureInsideCwd(filePath: string): string {
   const cwd = process.cwd();
+  // First, lexically resolve to an absolute path. Then realpathSync follows
+  // symlinks so a symlink inside the CWD that targets /etc/passwd is still
+  // caught by the CWD-traversal guard. realpathSync throws on non-existent
+  // paths; let that bubble so the tool surfaces "file not found" instead of
+  // a confusing CWD error.
   const abs = isAbsolute(filePath) ? resolve(filePath) : resolve(cwd, filePath);
-  const rel = relative(cwd, abs);
+  let realAbs: string;
+  try {
+    realAbs = realpathSync(abs);
+  } catch (err) {
+    throw new Error(`filePath "${filePath}" could not be resolved: ${(err as Error).message}`);
+  }
+  const rel = relative(cwd, realAbs);
   if (rel.startsWith("..") || isAbsolute(rel) || rel.split(sep).includes("..")) {
     throw new Error(
-      `filePath must resolve to inside the operator's CWD (${cwd}); got "${filePath}" → "${abs}" (rel="${rel}")`,
+      `filePath must resolve to inside the operator's CWD (${cwd}); got "${filePath}" → "${realAbs}" (rel="${rel}")`,
     );
   }
-  return abs;
+  return realAbs;
 }
 
 /** Decode a base64 string to bytes. Throws on malformed input. */
@@ -100,6 +91,8 @@ export function registerUploadMediaTool(
       data: z
         .string()
         .min(1)
+        .max(2 * 1024 * 1024, "data exceeds 2 MiB of base64 (~1.5 MiB decoded)")
+        .regex(/^[A-Za-z0-9+/]+={0,2}$/, "data is not valid base64")
         .optional()
         .describe("Base64-encoded bytes of the media. Mutually exclusive with `filePath`."),
       filePath: z
@@ -128,6 +121,14 @@ export function registerUploadMediaTool(
         bytes = base64ToBytes(args.data);
       } else {
         const absPath = ensureInsideCwd(args.filePath!);
+        // Check the size BEFORE reading so a 1 GiB file doesn't blow up the
+        // process. 1 MiB cap matches MAX_BYTES.
+        const stat = statSync(absPath);
+        if (stat.size > MAX_BYTES) {
+          throw new Error(
+            `media file is ${stat.size} bytes, exceeds ${MAX_BYTES}-byte (1 MiB) cap`,
+          );
+        }
         const nodeBuf = await readFile(absPath);
         bytes = new Uint8Array(nodeBuf.buffer, nodeBuf.byteOffset, nodeBuf.byteLength);
       }
@@ -153,15 +154,15 @@ export function registerUploadMediaTool(
       for (const url of endpoints) {
         let resp;
         try {
-          resp = await withTimeout(
-            signedFetch(secret, {
+          resp = await signedFetchWithTimeout(
+            secret,
+            {
               method: "PUT",
               url,
               body: bytes,
               headers: { "content-type": args.mime },
-            }),
+            },
             TOOL_TIMEOUT_MS,
-            "upload media",
           );
         } catch (err) {
           throw new Error(

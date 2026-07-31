@@ -13,7 +13,6 @@ import { z } from "zod";
 import { npubEncode } from "nostr-tools/nip19";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { signedFetch } from "../relay/client.js";
 import {
   getPublicKey,
   type NsecOrHex,
@@ -23,31 +22,12 @@ import {
   buildAddMember,
   buildCreateChannel,
 } from "../relay/event-builder.js";
+import {
+  formatRelayError,
+  signedFetchWithTimeout,
+} from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
-const TOOL_TIMEOUT_MS = 5_000;
-
-/** Race a promise against a timeout; rejects with a clear message on timeout. */
-async function withTimeout<T>(
-  p: Promise<T>,
-  ms: number,
-  label: string,
-): Promise<T> {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), ms);
-  try {
-    return await Promise.race([
-      p,
-      new Promise<never>((_, reject) => {
-        ac.signal.addEventListener("abort", () =>
-          reject(new Error(`${label}: aborted after ${ms}ms`)),
-        );
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 /**
  * Probe the relay for NIP-11 info. Tries `/api/identity` first, then `/info`,
@@ -59,11 +39,7 @@ async function probeRelayInfo(
   const base = relayUrl.replace(/\/$/, "");
   for (const path of ["/api/identity", "/info"]) {
     try {
-      const res = await withTimeout(
-        fetch(`${base}${path}`),
-        TOOL_TIMEOUT_MS,
-        `probe ${path}`,
-      );
+      const res = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(5000) });
       if (res.status >= 200 && res.status < 300) {
         const text = await res.text();
         let parsed: unknown = text;
@@ -148,25 +124,24 @@ export function registerListChannelsTool(
 
       let resp;
       try {
-        resp = await withTimeout(
-          signedFetch(secret, {
-            method: "POST",
-            url: `${relayUrl.replace(/\/$/, "")}/query`,
-            body,
-            headers: { "content-type": "application/json" },
-          }),
-          TOOL_TIMEOUT_MS,
-          "list channels",
-        );
+        resp = await signedFetchWithTimeout(secret, {
+          method: "POST",
+          url: `${relayUrl.replace(/\/$/, "")}/query`,
+          body,
+          headers: { "content-type": "application/json" },
+        });
       } catch (err) {
         throw new Error(
-          `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
+          formatRelayError(relayUrl, { cause: err as Error }),
         );
       }
 
       if (resp.status < 200 || resp.status >= 300) {
         throw new Error(
-          `relay rejected query: HTTP ${resp.status} — ${resp.bodyText.slice(0, RELAY_BODY_PRINT_LIMIT)}`,
+          formatRelayError(relayUrl, {
+            status: resp.status,
+            bodyText: resp.bodyText,
+          }),
         );
       }
 
@@ -257,25 +232,24 @@ export function registerCreateChannelTool(
 
       let resp;
       try {
-        resp = await withTimeout(
-          signedFetch(secret, {
-            method: "POST",
-            url: `${relayUrl.replace(/\/$/, "")}/events`,
-            body: JSON.stringify(event),
-            headers: { "content-type": "application/json" },
-          }),
-          TOOL_TIMEOUT_MS,
-          "create channel",
-        );
+        resp = await signedFetchWithTimeout(secret, {
+          method: "POST",
+          url: `${relayUrl.replace(/\/$/, "")}/events`,
+          body: JSON.stringify(event),
+          headers: { "content-type": "application/json" },
+        });
       } catch (err) {
         throw new Error(
-          `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
+          formatRelayError(relayUrl, { cause: err as Error }),
         );
       }
 
       if (resp.status < 200 || resp.status >= 300) {
         throw new Error(
-          `relay rejected event: HTTP ${resp.status} — ${resp.bodyText.slice(0, RELAY_BODY_PRINT_LIMIT)}`,
+          formatRelayError(relayUrl, {
+            status: resp.status,
+            bodyText: resp.bodyText,
+          }),
         );
       }
 
@@ -341,25 +315,24 @@ export function registerAddMemberTool(
 
       let resp;
       try {
-        resp = await withTimeout(
-          signedFetch(secret, {
-            method: "POST",
-            url: `${relayUrl.replace(/\/$/, "")}/events`,
-            body: JSON.stringify(event),
-            headers: { "content-type": "application/json" },
-          }),
-          TOOL_TIMEOUT_MS,
-          "add member",
-        );
+        resp = await signedFetchWithTimeout(secret, {
+          method: "POST",
+          url: `${relayUrl.replace(/\/$/, "")}/events`,
+          body: JSON.stringify(event),
+          headers: { "content-type": "application/json" },
+        });
       } catch (err) {
         throw new Error(
-          `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
+          formatRelayError(relayUrl, { cause: err as Error }),
         );
       }
 
       if (resp.status < 200 || resp.status >= 300) {
         throw new Error(
-          `relay rejected event: HTTP ${resp.status} — ${resp.bodyText.slice(0, RELAY_BODY_PRINT_LIMIT)}`,
+          formatRelayError(relayUrl, {
+            status: resp.status,
+            bodyText: resp.bodyText,
+          }),
         );
       }
 

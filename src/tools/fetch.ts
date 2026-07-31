@@ -9,18 +9,18 @@
 import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { signedFetch } from "../relay/client.js";
+import { type SignedFetchResult } from "../relay/client.js";
 import { type NsecOrHex, type NostrEvent } from "../relay/signer.js";
+import { signedFetchWithTimeout } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
-const TOOL_TIMEOUT_MS = 5_000;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
 
 /**
  * A NIP-01 filter — narrow subset that the relay's `/query` understands.
- * Extra fields are preserved in the wire payload so future filter additions
- * don't require a tool re-register.
+ * Unknown keys are passed through (`.passthrough()`) so the agent can use
+ * filter fields the tool author didn't anticipate without a re-register.
  */
 const filterSchema = z
   .object({
@@ -40,26 +40,17 @@ const filterSchema = z
       .optional()
       .describe(`Result limit (default ${DEFAULT_LIMIT}, max ${MAX_LIMIT}).`),
   })
-  .strict();
+  .passthrough();
 
-async function withTimeout<T>(
-  p: Promise<T>,
-  ms: number,
-  label: string,
-): Promise<T> {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), ms);
+/**
+ * Parse the relay body as JSON; return `null` on parse failure so the caller
+ * can format a tool-specific error message.
+ */
+function unwrap(resp: { bodyText: string }): unknown {
   try {
-    return await Promise.race([
-      p,
-      new Promise<never>((_, reject) => {
-        ac.signal.addEventListener("abort", () =>
-          reject(new Error(`${label}: aborted after ${ms}ms`)),
-        );
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
+    return JSON.parse(resp.bodyText);
+  } catch {
+    return null;
   }
 }
 
@@ -86,16 +77,13 @@ async function postQuery(
   relayUrl: string,
   filter: Record<string, unknown>,
 ): Promise<{ status: number; bodyText: string }> {
-  return withTimeout(
-    signedFetch(secret, {
-      method: "POST",
-      url: `${relayUrl.replace(/\/$/, "")}/query`,
-      body: JSON.stringify(filter),
-      headers: { "content-type": "application/json" },
-    }).then((r) => ({ status: r.status, bodyText: r.bodyText })),
-    TOOL_TIMEOUT_MS,
-    "fetch events",
-  );
+  const resp = await signedFetchWithTimeout(secret, {
+    method: "POST",
+    url: `${relayUrl.replace(/\/$/, "")}/query`,
+    body: JSON.stringify(filter),
+    headers: { "content-type": "application/json" },
+  });
+  return { status: resp.status, bodyText: resp.bodyText };
 }
 
 /**
@@ -137,10 +125,8 @@ export function registerFetchEventsTool(
         );
       }
 
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(resp.bodyText);
-      } catch {
+      const parsed = unwrap(resp);
+      if (parsed === null) {
         throw new Error(
           `relay returned non-JSON body for /query: ${resp.bodyText.slice(0, RELAY_BODY_PRINT_LIMIT)}`,
         );
@@ -210,7 +196,10 @@ export function registerSearchTool(
       }
 
       let searchMode: "relay" | "client-side" = "relay";
-      if (resp.status === 400 || resp.status === 422) {
+      // Broad fallback: any 4xx. Some relays reject the unknown `search`
+      // field with 400, others 415, others 422 — cover the whole client-error
+      // range.
+      if (resp.status >= 400 && resp.status < 500) {
         // Fallback: drop `search` and filter client-side.
         searchMode = "client-side";
         try {
@@ -228,10 +217,8 @@ export function registerSearchTool(
         );
       }
 
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(resp.bodyText);
-      } catch {
+      const parsed = unwrap(resp);
+      if (parsed === null) {
         throw new Error(
           `relay returned non-JSON body for /query: ${resp.bodyText.slice(0, RELAY_BODY_PRINT_LIMIT)}`,
         );

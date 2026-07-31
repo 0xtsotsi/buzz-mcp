@@ -255,7 +255,11 @@ describe("buzz_create_channel", () => {
     const { client } = await makeServerAndClient(registerCreateChannelTool);
     const result = await client.callTool({
       name: "buzz_create_channel",
-      arguments: { name: "general", visibility: "private" },
+      arguments: {
+        name: "general",
+        visibility: "private",
+        description: "the main lobby",
+      },
     });
 
     expect(fetchSpy.calls).toHaveLength(1);
@@ -275,6 +279,11 @@ describe("buzz_create_channel", () => {
     expect(tags.find((t) => t[0] === "visibility")).toEqual([
       "visibility",
       "private",
+    ]);
+    // description becomes an `["about", ...]` tag.
+    expect(tags.find((t) => t[0] === "about")).toEqual([
+      "about",
+      "the main lobby",
     ]);
 
     const parsed = parseText(result) as {
@@ -382,7 +391,6 @@ describe("buzz_add_member", () => {
 
     const { client } = await makeServerAndClient(registerAddMemberTool);
     const result = await client.callTool({
-      // @ts-expect-error — testing the Zod rejection path with a bad pubkey.
       name: "buzz_add_member",
       arguments: { pubkey: "not-hex" },
     });

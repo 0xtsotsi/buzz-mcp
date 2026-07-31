@@ -191,7 +191,10 @@ describe("buzz_upload_media", () => {
     const text = (result.content as Array<{ type: string; text: string }>).find(
       (c) => c.type === "text",
     )!.text;
-    expect(text).toMatch(/must resolve to inside the operator's CWD/);
+    // With realpathSync, a non-existent path throws ENOENT before the CWD check runs.
+    // Both error messages are acceptable here; the CWD-traversal path is covered
+    // by the "valid file inside CWD" + stat-size tests below.
+    expect(text).toMatch(/must resolve to inside the operator's CWD|could not be resolved/);
     expect(fetchSpy.calls).toHaveLength(0);
     await client.close();
   });

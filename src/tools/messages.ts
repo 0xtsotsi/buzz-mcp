@@ -15,7 +15,7 @@
  */
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { signedFetch } from "../relay/client.js";
+import { signedFetchWithTimeout } from "../util/relay-call.js";
 import { type NsecOrHex } from "../relay/signer.js";
 import { type ImetaEntry, buildEdit, buildMessage, buildReaction } from "../relay/event-builder.js";
 
@@ -111,30 +111,18 @@ export function registerPostMessageTool(
       });
 
       // 3. POST to the relay with a 5s timeout (race the signedFetch).
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), TOOL_TIMEOUT_MS);
-      let resp;
-      try {
-        resp = await Promise.race([
-          signedFetch(secret, {
-            method: "POST",
-            url: `${relayUrl.replace(/\/$/, "")}/events`,
-            body: JSON.stringify(event),
-            headers: { "content-type": "application/json" },
-          }),
-          new Promise<never>((_, reject) => {
-            ac.signal.addEventListener("abort", () =>
-              reject(new Error(`aborted after ${TOOL_TIMEOUT_MS}ms`)),
-            );
-          }),
-        ]);
-      } catch (err) {
-        clearTimeout(timer);
-        throw new Error(
-          `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
-        );
-      }
-      clearTimeout(timer);
+      const resp = await signedFetchWithTimeout(
+        secret,
+        {
+          method: "POST",
+          url: `${relayUrl.replace(/\/$/, "")}/events`,
+          body: JSON.stringify(event),
+          headers: { "content-type": "application/json" },
+        },
+        TOOL_TIMEOUT_MS,
+      ).catch((err: Error) => {
+        throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
+      });
 
       // 4. Parse + extract. 2xx = accepted.
       if (resp.status < 200 || resp.status >= 300) {
@@ -238,30 +226,18 @@ export function registerEditMessageTool(
         originalKind: args.originalKind,
       });
 
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), TOOL_TIMEOUT_MS);
-      let resp;
-      try {
-        resp = await Promise.race([
-          signedFetch(secret, {
-            method: "POST",
-            url: `${relayUrl.replace(/\/$/, "")}/events`,
-            body: JSON.stringify(event),
-            headers: { "content-type": "application/json" },
-          }),
-          new Promise<never>((_, reject) => {
-            ac.signal.addEventListener("abort", () =>
-              reject(new Error(`aborted after ${TOOL_TIMEOUT_MS}ms`)),
-            );
-          }),
-        ]);
-      } catch (err) {
-        clearTimeout(timer);
-        throw new Error(
-          `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
-        );
-      }
-      clearTimeout(timer);
+      const resp = await signedFetchWithTimeout(
+        secret,
+        {
+          method: "POST",
+          url: `${relayUrl.replace(/\/$/, "")}/events`,
+          body: JSON.stringify(event),
+          headers: { "content-type": "application/json" },
+        },
+        TOOL_TIMEOUT_MS,
+      ).catch((err: Error) => {
+        throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
+      });
 
       if (resp.status < 200 || resp.status >= 300) {
         throw new Error(
@@ -322,30 +298,18 @@ export function registerReactTool(
         emoji: args.emoji,
       });
 
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), TOOL_TIMEOUT_MS);
-      let resp;
-      try {
-        resp = await Promise.race([
-          signedFetch(secret, {
-            method: "POST",
-            url: `${relayUrl.replace(/\/$/, "")}/events`,
-            body: JSON.stringify(event),
-            headers: { "content-type": "application/json" },
-          }),
-          new Promise<never>((_, reject) => {
-            ac.signal.addEventListener("abort", () =>
-              reject(new Error(`aborted after ${TOOL_TIMEOUT_MS}ms`)),
-            );
-          }),
-        ]);
-      } catch (err) {
-        clearTimeout(timer);
-        throw new Error(
-          `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
-        );
-      }
-      clearTimeout(timer);
+      const resp = await signedFetchWithTimeout(
+        secret,
+        {
+          method: "POST",
+          url: `${relayUrl.replace(/\/$/, "")}/events`,
+          body: JSON.stringify(event),
+          headers: { "content-type": "application/json" },
+        },
+        TOOL_TIMEOUT_MS,
+      ).catch((err: Error) => {
+        throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
+      });
 
       if (resp.status < 200 || resp.status >= 300) {
         throw new Error(

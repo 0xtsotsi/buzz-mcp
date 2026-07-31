@@ -37,7 +37,7 @@ const DEFAULT_RELAY_URL = "https://coreprt.webrnds.com";
  * here as a single source of truth so the MCP `instructions` string and the
  * `test/index.spec.ts` assertion can both reference it.
  */
-const REGISTERED_TOOLS: string[] = [
+export const REGISTERED_TOOLS: string[] = [
   "buzz_add_member",
   "buzz_approve_workflow",
   "buzz_create_channel",

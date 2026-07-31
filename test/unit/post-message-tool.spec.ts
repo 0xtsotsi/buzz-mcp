@@ -177,4 +177,29 @@ describe("buzz_post_message tool", () => {
     expect(parsed.raw).toEqual({ weird: "shape" });
     await client.close();
   });
+
+
+  it("rejects emoji content that exceeds the 32KB byte cap (not char cap)", async () => {
+    fetchSpy = makeFetchSpy(async () => new Response("{}", { status: 202 }));
+    globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
+    const { client } = await makeServerAndClient(SECRET, RELAY);
+
+    // Each "🚀" is 4 UTF-8 bytes. 10000 of them = 40000 bytes, which exceeds
+    // the 32KB cap even though the .length is only 10000.
+    const content = "🚀".repeat(10_000);
+    expect(content.length).toBeLessThan(32 * 1024);
+    const bytes = new TextEncoder().encode(content).byteLength;
+    expect(bytes).toBeGreaterThan(32 * 1024);
+    const result = await client.callTool({
+      name: "buzz_post_message",
+      arguments: { channel: "general", content },
+    });
+    expect(result.isError).toBe(true);
+    const resultText = (result.content as Array<{ type: string; text?: string }>).find(
+      (c) => c.type === "text",
+    )!.text!;
+    expect(resultText).toMatch(/exceeds \d+-byte cap/);
+
+    await client.close();
+  });
 });

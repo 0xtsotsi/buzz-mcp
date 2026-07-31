@@ -24,6 +24,8 @@ export type SignedFetchOptions = {
   body?: string | Uint8Array;
   /** Extra request headers. `Authorization` is reserved — see signedFetch. */
   headers?: Record<string, string>;
+  /** Optional AbortSignal — when fired, the underlying fetch is cancelled. */
+  signal?: AbortSignal;
 };
 
 export type SignedFetchResult = {
@@ -107,7 +109,7 @@ export async function signedFetch(
     init.body = opts.body as BodyInit;
   }
 
-  const res = await fetch(opts.url, init);
+  const res = await fetch(opts.url, opts.signal ? { ...init, signal: opts.signal } : init);
   // Buffer the body as text so callers can inspect/re-parse.
   const bodyText = await res.text();
   return { status: res.status, headers: res.headers, bodyText };

@@ -261,6 +261,9 @@ export async function buildEdit(
     ["client", "buzz-mcp"],
     ["t", "euc"],
     ["e", opts.originalEventId, "", "edit"],
+    // `k` identifies the kind of the original event being edited (1 or 9)
+    // so consumers can render the edit without re-fetching the target.
+    ["k", String(opts.originalKind)],
   ];
 
   const signed = signEvent(opts.secret, {
