@@ -2,12 +2,15 @@
  * @buzz/mcp — TypeScript MCP server for the CorePrt Nostr relay.
  *
  * PR #3 introduced the first MCP tool (`buzz_post_message`).
- * PR #4 adds 12 more (identity, channels, message edits/reactions,
+ * PR #4 added 12 more (identity, channels, message edits/reactions,
  * fetch + search, jobs + workflow approvals, media upload, thread summaries).
- * PR #5 will add WebSocket subscriptions. PR #6 will add docs.
+ * PR #5 adds the WebSocket subscription manager + 3 tools
+ * (`buzz_subscribe`, `buzz_unsubscribe`, `buzz_poll`).
+ * PR #6 will add docs.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type NsecOrHex } from "./relay/signer.js";
+import { SubscriptionManager } from "./relay/subscription.js";
 import {
   registerEditMessageTool,
   registerPostMessageTool,
@@ -26,6 +29,11 @@ import {
 } from "./tools/jobs.js";
 import { registerUploadMediaTool } from "./tools/media.js";
 import { registerPostThreadSummaryTool } from "./tools/summaries.js";
+import {
+  registerPollTool,
+  registerSubscribeTool,
+  registerUnsubscribeTool,
+} from "./tools/subscribe.js";
 
 const SERVER_NAME = "@buzz/mcp";
 const SERVER_VERSION = "0.1.0";
@@ -33,9 +41,14 @@ const SERVER_VERSION = "0.1.0";
 const DEFAULT_RELAY_URL = "https://coreprt.webrnds.com";
 
 /**
- * All 13 tool names registered by this build, in alphabetical order. Kept
+ * All 16 tool names registered by this build, in alphabetical order. Kept
  * here as a single source of truth so the MCP `instructions` string and the
  * `test/index.spec.ts` assertion can both reference it.
+ *
+ * PR #5 added the 3 subscription tools:
+ *   - buzz_subscribe   (opens a REQ against the WS)
+ *   - buzz_unsubscribe (CLOSE + drop from local map)
+ *   - buzz_poll        (drain buffered EVENT frames)
  */
 export const REGISTERED_TOOLS: string[] = [
   "buzz_add_member",
@@ -46,10 +59,13 @@ export const REGISTERED_TOOLS: string[] = [
   "buzz_fetch_events",
   "buzz_identity",
   "buzz_list_channels",
+  "buzz_poll",
   "buzz_post_message",
   "buzz_post_thread_summary",
   "buzz_react",
   "buzz_search",
+  "buzz_subscribe",
+  "buzz_unsubscribe",
   "buzz_upload_media",
 ];
 
@@ -64,6 +80,11 @@ function buildInstructions(relayUrl: string, tools: string[]): string {
     "",
     "All signed writes go through the operator's BUZZ_PRIVATE_KEY env var.",
     "The key is read once at createServer() time and never re-read.",
+    "",
+    "Subscriptions (buzz_subscribe / buzz_unsubscribe / buzz_poll) share a",
+    "single WebSocket connection. They are pull-only — events are buffered",
+    "per sub_id and drained by buzz_poll; nothing is pushed back through MCP",
+    "notifications/*.",
   ].join("\n");
 }
 
@@ -74,6 +95,11 @@ function buildInstructions(relayUrl: string, tools: string[]): string {
  * call time. Throws a clear error if `BUZZ_PRIVATE_KEY` is missing.
  *
  * The relay URL defaults to "https://coreprt.webrnds.com" if unset.
+ *
+ * PR #5: creates a singleton `SubscriptionManager` per server instance and
+ * shares it across `buzz_subscribe` / `buzz_unsubscribe` / `buzz_poll`. The
+ * WS connection is lazy — it does NOT open at `createServer()` time, only on
+ * the first `buzz_subscribe` call.
  */
 export function createServer(): McpServer {
   const secret = process.env["BUZZ_PRIVATE_KEY"] as NsecOrHex | undefined;
@@ -84,6 +110,8 @@ export function createServer(): McpServer {
   }
 
   const relayUrl = process.env["BUZZ_RELAY_URL"] ?? DEFAULT_RELAY_URL;
+
+  const subs = new SubscriptionManager(secret, relayUrl);
 
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
@@ -106,6 +134,9 @@ export function createServer(): McpServer {
   registerApproveWorkflowTool(server, secret, relayUrl);
   registerUploadMediaTool(server, secret, relayUrl);
   registerPostThreadSummaryTool(server, secret, relayUrl);
+  registerSubscribeTool(server, subs);
+  registerUnsubscribeTool(server, subs);
+  registerPollTool(server, subs);
 
   return server;
 }
