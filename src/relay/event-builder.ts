@@ -402,7 +402,9 @@ export async function buildJob(
     ["client", "buzz-mcp"],
     ["t", "euc"],
     ["title", opts.title],
-    ["summary", opts.description],
+    // Truncate the summary-tag value to 200 chars. The full description is
+    // still in `content`; the tag is just a search-friendly summary.
+    ["summary", opts.description.slice(0, 200)],
   ];
   if (opts.budget !== undefined) {
     tags.push(["amount", String(opts.budget)]);

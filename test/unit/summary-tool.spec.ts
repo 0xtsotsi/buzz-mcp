@@ -144,4 +144,28 @@ describe("buzz_post_thread_summary", () => {
     expect(text).toMatch(/HTTP 500/);
     await client.close();
   });
+
+
+
+  it("rejects multibyte summary that exceeds 32KB byte cap", async () => {
+    fetchSpy = makeFetchSpy(async () => new Response("{}", { status: 202 }));
+    globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
+    const { client } = await makeServerAndClient();
+
+    // Each "🚀" is 4 UTF-8 bytes. 10000 of them = 40KB, which exceeds the
+    // 32KB cap even though .length is well under 32K.
+    const summary = "🚀".repeat(10_000);
+    const result = await client.callTool({
+      name: "buzz_post_thread_summary",
+      arguments: { rootEventId: "a".repeat(64), summary },
+    });
+    expect(result.isError).toBe(true);
+    const resultText = (result.content as Array<{ type: string; text?: string }>).find(
+      (c) => c.type === "text",
+    )!.text!;
+    expect(resultText).toMatch(/exceeds \d+-byte cap/);
+    expect(fetchSpy.calls).toHaveLength(0); // no HTTP call — rejected pre-flight
+
+    await client.close();
+  });
 });
