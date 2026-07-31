@@ -15,14 +15,28 @@ describe("createServer", () => {
     expect(() => createServer()).toThrow(/BUZZ_PRIVATE_KEY/);
   });
 
-  it("creates a server with exactly one tool when env is set", () => {
+  it("creates a server with all 13 tools registered when env is set", () => {
     process.env["BUZZ_PRIVATE_KEY"] =
       "0000000000000000000000000000000000000000000000000000000000000001";
     process.env["BUZZ_RELAY_URL"] = "https://relay.test";
     const server = createServer();
     const tools = (server as unknown as { _registeredTools: Record<string, unknown> })
       ._registeredTools;
-    expect(Object.keys(tools)).toEqual(["buzz_post_message"]);
+    expect(Object.keys(tools).sort()).toEqual([
+      "buzz_add_member",
+      "buzz_approve_workflow",
+      "buzz_create_channel",
+      "buzz_create_job",
+      "buzz_edit_message",
+      "buzz_fetch_events",
+      "buzz_identity",
+      "buzz_list_channels",
+      "buzz_post_message",
+      "buzz_post_thread_summary",
+      "buzz_react",
+      "buzz_search",
+      "buzz_upload_media",
+    ]);
   });
 
   it("defaults BUZZ_RELAY_URL to coreprt.webrnds.com when unset", () => {
