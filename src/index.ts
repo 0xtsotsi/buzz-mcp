@@ -1,47 +1,62 @@
 /**
  * @buzz/mcp — TypeScript MCP server for the CorePrt Nostr relay.
  *
- * This is the scaffold (PR 1/6). It exposes the McpServer factory only,
- * with zero tools registered. Subsequent PRs will add a local nsec signer,
- * a relay client, and the first tools (publish_event, get_event,
- * subscribe_events, etc.).
+ * PR #3 introduces the first MCP tool (`buzz_post_message`).
+ * Subsequent PRs will add the remaining 15 tools and a WebSocket
+ * subscription model. No ACP harness integration is planned.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { type NsecOrHex } from "./relay/signer.js";
+import { registerPostMessageTool } from "./tools/messages.js";
 
 const SERVER_NAME = "@buzz/mcp";
 const SERVER_VERSION = "0.1.0";
 
-const INSTRUCTIONS = [
-  "@buzz/mcp is an MCP server for the CorePrt Nostr relay.",
-  "",
-  "Current status: scaffold. No tools are registered yet.",
-  "",
-  "Once tools land (see upcoming PRs), this server will let an MCP client",
-  "publish and subscribe to Nostr events signed with a local nsec held by",
-  "the operator of this process. It will talk to a CorePrt relay over",
-  "its websocket interface.",
-  "",
-  "Project: https://github.com/0xtsotsi/buzz-mcp",
-  "Relay:   https://github.com/0xtsotsi/coreprt",
-].join("\n");
+const DEFAULT_RELAY_URL = "https://coreprt.webrnds.com";
+
+function buildInstructions(relayUrl: string, tools: string[]): string {
+  return [
+    "@buzz/mcp is an MCP server for the CorePrt Nostr relay.",
+    "",
+    `Relay: ${relayUrl}`,
+    "",
+    "Tools registered in this build:",
+    ...tools.map((t) => `  - ${t}`),
+    "",
+    "All signed writes go through the operator's BUZZ_PRIVATE_KEY env var.",
+    "The key is read once at createServer() time and never re-read.",
+  ].join("\n");
+}
 
 /**
- * Construct a fresh McpServer instance. Each call returns an independent
- * server; transport lifetime is the caller's responsibility.
+ * Construct a fresh McpServer instance.
+ *
+ * Reads `BUZZ_PRIVATE_KEY` and `BUZZ_RELAY_URL` from the environment at
+ * call time. Throws a clear error if `BUZZ_PRIVATE_KEY` is missing.
+ *
+ * The relay URL defaults to "https://coreprt.webrnds.com" if unset.
  */
 export function createServer(): McpServer {
+  const secret = process.env["BUZZ_PRIVATE_KEY"] as NsecOrHex | undefined;
+  if (!secret) {
+    throw new Error(
+      "BUZZ_PRIVATE_KEY is not set. Add it to the env block in ~/.gg/mcp.json.",
+    );
+  }
+
+  const relayUrl = process.env["BUZZ_RELAY_URL"] ?? DEFAULT_RELAY_URL;
+
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
       capabilities: {},
-      instructions: INSTRUCTIONS,
+      instructions: buildInstructions(relayUrl, ["buzz_post_message"]),
     },
   );
 
-  // No tools registered yet — the handler installed on connect will return
-  // `{ tools: [] }`. Tool registration lands in PRs 3 and 4.
+  registerPostMessageTool(server, secret, relayUrl);
 
   return server;
 }
 
-export { SERVER_NAME, SERVER_VERSION, INSTRUCTIONS };
+export { SERVER_NAME, SERVER_VERSION };
