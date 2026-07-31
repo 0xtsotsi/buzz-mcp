@@ -1,9 +1,9 @@
 /**
- * `buzz_post_message` — the first MCP tool exposed by @buzz/mcp.
+ * Message MCP tools: `buzz_post_message`, `buzz_edit_message`, `buzz_react`.
  *
- * Posts a signed Nostr event (kind:9 stream message) to a CorePrt relay.
- * The relay URL and the operator's Nostr secret come from environment
- * variables — never from tool parameters.
+ * Each posts a signed Nostr event (kind:9 stream message, kind:40003 edit,
+ * or kind:7 reaction) to a CorePrt relay. The relay URL and the operator's
+ * Nostr secret come from environment variables — never from tool parameters.
  *
  * Environment (read once at createServer() time):
  *   BUZZ_RELAY_URL    — e.g. "https://coreprt.webrnds.com" or
@@ -15,9 +15,9 @@
  */
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { signedFetch } from "../relay/client.js";
+import { signedFetchWithTimeout } from "../util/relay-call.js";
 import { type NsecOrHex } from "../relay/signer.js";
-import { type ImetaEntry, buildMessage } from "../relay/event-builder.js";
+import { type ImetaEntry, buildEdit, buildMessage, buildReaction } from "../relay/event-builder.js";
 
 /** Hard cap on a single message body, in bytes (UTF-8). */
 const MAX_CONTENT_BYTES = 32 * 1024;
@@ -111,30 +111,18 @@ export function registerPostMessageTool(
       });
 
       // 3. POST to the relay with a 5s timeout (race the signedFetch).
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), TOOL_TIMEOUT_MS);
-      let resp;
-      try {
-        resp = await Promise.race([
-          signedFetch(secret, {
-            method: "POST",
-            url: `${relayUrl.replace(/\/$/, "")}/events`,
-            body: JSON.stringify(event),
-            headers: { "content-type": "application/json" },
-          }),
-          new Promise<never>((_, reject) => {
-            ac.signal.addEventListener("abort", () =>
-              reject(new Error(`aborted after ${TOOL_TIMEOUT_MS}ms`)),
-            );
-          }),
-        ]);
-      } catch (err) {
-        clearTimeout(timer);
-        throw new Error(
-          `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
-        );
-      }
-      clearTimeout(timer);
+      const resp = await signedFetchWithTimeout(
+        secret,
+        {
+          method: "POST",
+          url: `${relayUrl.replace(/\/$/, "")}/events`,
+          body: JSON.stringify(event),
+          headers: { "content-type": "application/json" },
+        },
+        TOOL_TIMEOUT_MS,
+      ).catch((err: Error) => {
+        throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
+      });
 
       // 4. Parse + extract. 2xx = accepted.
       if (resp.status < 200 || resp.status >= 300) {
@@ -177,6 +165,168 @@ export function registerPostMessageTool(
                 accepted: true,
                 channel: channelName,
                 raw: parsed ?? resp.bodyText.slice(0, 1000),
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    },
+  );
+}
+
+/**
+ * Register `buzz_edit_message`. Builds a kind:40003 edit event with
+ * `["e", originalEventId, "", "edit"]` and posts to `/events`.
+ *
+ * NOTE: kind:40003 is the *relay-owner* edit kind per the Rust SDK comment in
+ * `buildEdit` (`src/relay/event-builder.ts`). In practice only the relay owner
+ * can publish 40003 because the relay re-signs with its own key. For a
+ * member-agent, edits may need to be kind:5 (NIP-33) — for this PR we wire up
+ * 40003 as-is and document the assumption. If a future run shows the relay
+ * rejects member-signed 40003, switch to kind:5 in a follow-up.
+ */
+export function registerEditMessageTool(
+  server: McpServer,
+  secret: NsecOrHex,
+  relayUrl: string,
+): void {
+  server.tool(
+    "buzz_edit_message",
+    "Edit an existing message (kind:40003). Returns the event id, the " +
+      "target event id, and the new content. NOTE: 40003 is the relay-owner " +
+      "edit kind — see the buildEdit helper for caveats.",
+    {
+      eventId: z
+        .string()
+        .regex(/^[0-9a-f]{64}$/, "must be 64 lowercase hex characters")
+        .describe("Event id of the message being edited. Required."),
+      content: z
+        .string()
+        .min(1)
+        .max(MAX_CONTENT_BYTES)
+        .describe("New content body. Required. Hard cap 32 KB."),
+      originalKind: z
+        .union([z.literal(1), z.literal(9)])
+        .describe("Kind of the event being edited (1 or 9). Required."),
+    },
+    async (args) => {
+      const byteLen = new TextEncoder().encode(args.content).byteLength;
+      if (byteLen > MAX_CONTENT_BYTES) {
+        throw new Error(
+          `content is ${byteLen} bytes, exceeds ${MAX_CONTENT_BYTES}-byte cap`,
+        );
+      }
+
+      const event = await buildEdit({
+        secret,
+        originalEventId: args.eventId,
+        newContent: args.content,
+        originalKind: args.originalKind,
+      });
+
+      const resp = await signedFetchWithTimeout(
+        secret,
+        {
+          method: "POST",
+          url: `${relayUrl.replace(/\/$/, "")}/events`,
+          body: JSON.stringify(event),
+          headers: { "content-type": "application/json" },
+        },
+        TOOL_TIMEOUT_MS,
+      ).catch((err: Error) => {
+        throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
+      });
+
+      if (resp.status < 200 || resp.status >= 300) {
+        throw new Error(
+          `relay rejected event: HTTP ${resp.status} — ${resp.bodyText.slice(0, 500)}`,
+        );
+      }
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              {
+                event_id: event.id,
+                accepted: true,
+                target: args.eventId,
+                new_content: args.content,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    },
+  );
+}
+
+/**
+ * Register `buzz_react`. Builds a kind:7 NIP-25 reaction event and posts to
+ * `/events`. The emoji is held both as the event `content` and in the
+ * `["content", emoji]` tag for legacy compatibility.
+ */
+export function registerReactTool(
+  server: McpServer,
+  secret: NsecOrHex,
+  relayUrl: string,
+): void {
+  server.tool(
+    "buzz_react",
+    "Post a reaction (kind:7 NIP-25). Returns the event id, the target event " +
+      "id, and the emoji.",
+    {
+      eventId: z
+        .string()
+        .regex(/^[0-9a-f]{64}$/, "must be 64 lowercase hex characters")
+        .describe("Event id of the message being reacted to. Required."),
+      emoji: z
+        .string()
+        .min(1)
+        .max(16)
+        .describe("Emoji shortcode (1–16 chars). Required."),
+    },
+    async (args) => {
+      const event = await buildReaction({
+        secret,
+        targetEventId: args.eventId,
+        emoji: args.emoji,
+      });
+
+      const resp = await signedFetchWithTimeout(
+        secret,
+        {
+          method: "POST",
+          url: `${relayUrl.replace(/\/$/, "")}/events`,
+          body: JSON.stringify(event),
+          headers: { "content-type": "application/json" },
+        },
+        TOOL_TIMEOUT_MS,
+      ).catch((err: Error) => {
+        throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
+      });
+
+      if (resp.status < 200 || resp.status >= 300) {
+        throw new Error(
+          `relay rejected event: HTTP ${resp.status} — ${resp.bodyText.slice(0, 500)}`,
+        );
+      }
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              {
+                event_id: event.id,
+                accepted: true,
+                target: args.eventId,
+                emoji: args.emoji,
               },
               null,
               2,
