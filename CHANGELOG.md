@@ -76,3 +76,18 @@ docs (PR #6).
 - Multi-relay fan-out (`buzz-multi-mcp`). One process, one relay.
 
 [0.1.0]: https://github.com/0xtsotsi/buzz-mcp/releases/tag/v0.1.0
+
+## [0.1.1] - 2026-08-01
+
+### Fixed
+- **CF Access service-token headers forwarded on every `signedFetch` call.** When `CF_ACCESS_CLIENT_ID` + `CF_ACCESS_CLIENT_SECRET` are both set in the env at `createServer()` time, every outgoing relay request now carries `CF-Access-Client-Id` + `CF-Access-Client-Secret` alongside the existing NIP-98 `Authorization` header. This unblocks `@buzz/mcp` against the deployed `coreprt.webrnds.com` (gated by Cloudflare Access policy `service-token-buzz-mcp`). Behavior is unchanged when either env var is unset (local-relay development case).
+
+### Added
+- `CfAccess` type exported from `src/util/relay-call.ts` — `{ clientId: string; clientSecret: string }`.
+- `signedFetchWithTimeout` accepts a 4th `cfAccess?` parameter that merges CF Access headers into the request bag.
+- 4 new unit tests in `test/unit/cf-access-headers.spec.ts` covering: both env vars set → headers forwarded; both missing → headers absent; only one set → headers absent; NIP-98 `Authorization` still present.
+
+### Notes
+- The 16 tool functions each take `cfAccess?: CfAccess` as a 4th parameter. The 13 HTTP tools forward it through `signedFetchWithTimeout`; the 3 WebSocket subscription tools receive `_cfAccess` (underscore-prefixed, intentionally unused — WS doesn't traverse CF Access).
+- `buzz_identity`'s NIP-11 probe uses plain `fetch` (not `signedFetch`) per the spec; it is NOT CF-Access-gated by this change. In practice the probe path is unauthenticated by design and will return 302 from CF Access if the env vars are unset. Future: `buzz_identity` should also forward CF-Access headers (small follow-up).
+- The agent keypair (`5430c42f…`) was debugged in chat during v0.1.0 onboarding; rotate before any production use.

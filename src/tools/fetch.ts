@@ -10,11 +10,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { NostrEvent, NsecOrHex } from "../relay/signer.js";
-import { signedFetchWithTimeout } from "../util/relay-call.js";
+import { type CfAccess, signedFetchWithTimeout } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
+
+/** Per-call timeout (default). 5s is generous; the relay acks in <1s. */
+const TOOL_TIMEOUT_MS = 5_000;
 
 /**
  * A NIP-01 filter — narrow subset that the relay's `/query` understands.
@@ -75,13 +78,19 @@ async function postQuery(
   secret: NsecOrHex,
   relayUrl: string,
   filter: Record<string, unknown>,
+  cfAccess?: CfAccess,
 ): Promise<{ status: number; bodyText: string }> {
-  const resp = await signedFetchWithTimeout(secret, {
-    method: "POST",
-    url: `${relayUrl.replace(/\/$/, "")}/query`,
-    body: JSON.stringify(filter),
-    headers: { "content-type": "application/json" },
-  });
+  const resp = await signedFetchWithTimeout(
+    secret,
+    {
+      method: "POST",
+      url: `${relayUrl.replace(/\/$/, "")}/query`,
+      body: JSON.stringify(filter),
+      headers: { "content-type": "application/json" },
+    },
+    TOOL_TIMEOUT_MS,
+    cfAccess,
+  );
   return { status: resp.status, bodyText: resp.bodyText };
 }
 
@@ -93,6 +102,7 @@ export function registerFetchEventsTool(
   server: McpServer,
   secret: NsecOrHex,
   relayUrl: string,
+  cfAccess?: CfAccess,
 ): void {
   server.tool(
     "buzz_fetch_events",
@@ -109,7 +119,7 @@ export function registerFetchEventsTool(
 
       let resp: QueryResult;
       try {
-        resp = await postQuery(secret, relayUrl, filter);
+        resp = await postQuery(secret, relayUrl, filter, cfAccess);
       } catch (err) {
         throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
       }
@@ -151,7 +161,12 @@ export function registerFetchEventsTool(
  * field for NIP-50 relay-side search. If the relay 4xx's on `search`, fall
  * back to fetching without it and filter client-side by `content.includes`.
  */
-export function registerSearchTool(server: McpServer, secret: NsecOrHex, relayUrl: string): void {
+export function registerSearchTool(
+  server: McpServer,
+  secret: NsecOrHex,
+  relayUrl: string,
+  cfAccess?: CfAccess,
+): void {
   server.tool(
     "buzz_search",
     "Search events by free-text query (NIP-50). Tries relay-side search first; " +
@@ -172,10 +187,15 @@ export function registerSearchTool(server: McpServer, secret: NsecOrHex, relayUr
       // First attempt: relay-side NIP-50 search.
       let resp: QueryResult;
       try {
-        resp = await postQuery(secret, relayUrl, {
-          ...baseFilter,
-          search: args.search,
-        });
+        resp = await postQuery(
+          secret,
+          relayUrl,
+          {
+            ...baseFilter,
+            search: args.search,
+          },
+          cfAccess,
+        );
       } catch (err) {
         throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
       }
@@ -188,7 +208,7 @@ export function registerSearchTool(server: McpServer, secret: NsecOrHex, relayUr
         // Fallback: drop `search` and filter client-side.
         searchMode = "client-side";
         try {
-          resp = await postQuery(secret, relayUrl, baseFilter);
+          resp = await postQuery(secret, relayUrl, baseFilter, cfAccess);
         } catch (err) {
           throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
         }

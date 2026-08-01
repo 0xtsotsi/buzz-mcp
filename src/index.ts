@@ -31,9 +31,10 @@ import {
   registerUnsubscribeTool,
 } from "./tools/subscribe.js";
 import { registerPostThreadSummaryTool } from "./tools/summaries.js";
+import type { CfAccess } from "./util/relay-call.js";
 
 const SERVER_NAME = "@buzz/mcp";
-const SERVER_VERSION = "0.1.0";
+const SERVER_VERSION = "0.1.1";
 
 const DEFAULT_RELAY_URL = "https://coreprt.webrnds.com";
 
@@ -66,17 +67,27 @@ export const REGISTERED_TOOLS: string[] = [
   "buzz_upload_media",
 ];
 
-function buildInstructions(relayUrl: string, tools: string[]): string {
+function buildInstructions(
+  relayUrl: string,
+  tools: string[],
+  cfAccess: CfAccess | undefined,
+): string {
   return [
     "@buzz/mcp is an MCP server for the CorePrt Nostr relay.",
     "",
     `Relay: ${relayUrl}`,
+    `Cloudflare Access: ${cfAccess !== undefined ? "forwarded (service token present)" : "not in path"}`,
     "",
     "Tools registered in this build:",
     ...tools.map((t) => `  - ${t}`),
     "",
     "All signed writes go through the operator's BUZZ_PRIVATE_KEY env var.",
     "The key is read once at createServer() time and never re-read.",
+    "When CF_ACCESS_CLIENT_ID + CF_ACCESS_CLIENT_SECRET are both set, every",
+    "signedFetch also forwards CF-Access-Client-Id + CF-Access-Client-Secret",
+    "headers so the request survives the Cloudflare Access gate in front of",
+    "the relay. The secret value itself never appears in tool-result payloads",
+    "or logs.",
     "",
     "Subscriptions (buzz_subscribe / buzz_unsubscribe / buzz_poll) share a",
     "single WebSocket connection. They are pull-only — events are buffered",
@@ -88,10 +99,18 @@ function buildInstructions(relayUrl: string, tools: string[]): string {
 /**
  * Construct a fresh McpServer instance.
  *
- * Reads `BUZZ_PRIVATE_KEY` and `BUZZ_RELAY_URL` from the environment at
- * call time. Throws a clear error if `BUZZ_PRIVATE_KEY` is missing.
+ * Reads `BUZZ_PRIVATE_KEY`, `BUZZ_RELAY_URL`, and the optional
+ * `CF_ACCESS_CLIENT_ID` + `CF_ACCESS_CLIENT_SECRET` env vars at call time.
+ * Throws a clear error if `BUZZ_PRIVATE_KEY` is missing.
  *
  * The relay URL defaults to "https://coreprt.webrnds.com" if unset.
+ *
+ * CF Access: when BOTH `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`
+ * are non-empty, every `signedFetch` automatically forwards
+ * `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers. If either is
+ * missing, the CF-Access layer is bypassed (preserves the local-relay dev
+ * case). The credentials are read once at startup; the secret value is
+ * never logged or returned in tool-result payloads.
  *
  * PR #5: creates a singleton `SubscriptionManager` per server instance and
  * shares it across `buzz_subscribe` / `buzz_unsubscribe` / `buzz_poll`. The
@@ -106,32 +125,45 @@ export function createServer(): McpServer {
 
   const relayUrl = process.env["BUZZ_RELAY_URL"] ?? DEFAULT_RELAY_URL;
 
+  // Cloudflare Access service-token credentials. Both must be present and
+  // non-empty; if either is missing, fall through with `cfAccess = undefined`
+  // so the local-relay dev path (no CF Access in front) keeps working.
+  const cfClientId = process.env["CF_ACCESS_CLIENT_ID"];
+  const cfClientSecret = process.env["CF_ACCESS_CLIENT_SECRET"];
+  const cfAccess: CfAccess | undefined =
+    cfClientId !== undefined &&
+    cfClientId !== "" &&
+    cfClientSecret !== undefined &&
+    cfClientSecret !== ""
+      ? { clientId: cfClientId, clientSecret: cfClientSecret }
+      : undefined;
+
   const subs = new SubscriptionManager(secret, relayUrl);
 
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
       capabilities: {},
-      instructions: buildInstructions(relayUrl, REGISTERED_TOOLS),
+      instructions: buildInstructions(relayUrl, REGISTERED_TOOLS, cfAccess),
     },
   );
 
-  registerPostMessageTool(server, secret, relayUrl);
-  registerEditMessageTool(server, secret, relayUrl);
-  registerReactTool(server, secret, relayUrl);
-  registerIdentityTool(server, secret, relayUrl);
-  registerListChannelsTool(server, secret, relayUrl);
-  registerCreateChannelTool(server, secret, relayUrl);
-  registerAddMemberTool(server, secret, relayUrl);
-  registerFetchEventsTool(server, secret, relayUrl);
-  registerSearchTool(server, secret, relayUrl);
-  registerCreateJobTool(server, secret, relayUrl);
-  registerApproveWorkflowTool(server, secret, relayUrl);
-  registerUploadMediaTool(server, secret, relayUrl);
-  registerPostThreadSummaryTool(server, secret, relayUrl);
-  registerSubscribeTool(server, subs);
-  registerUnsubscribeTool(server, subs);
-  registerPollTool(server, subs);
+  registerPostMessageTool(server, secret, relayUrl, cfAccess);
+  registerEditMessageTool(server, secret, relayUrl, cfAccess);
+  registerReactTool(server, secret, relayUrl, cfAccess);
+  registerIdentityTool(server, secret, relayUrl, cfAccess);
+  registerListChannelsTool(server, secret, relayUrl, cfAccess);
+  registerCreateChannelTool(server, secret, relayUrl, cfAccess);
+  registerAddMemberTool(server, secret, relayUrl, cfAccess);
+  registerFetchEventsTool(server, secret, relayUrl, cfAccess);
+  registerSearchTool(server, secret, relayUrl, cfAccess);
+  registerCreateJobTool(server, secret, relayUrl, cfAccess);
+  registerApproveWorkflowTool(server, secret, relayUrl, cfAccess);
+  registerUploadMediaTool(server, secret, relayUrl, cfAccess);
+  registerPostThreadSummaryTool(server, secret, relayUrl, cfAccess);
+  registerSubscribeTool(server, subs, cfAccess);
+  registerUnsubscribeTool(server, subs, cfAccess);
+  registerPollTool(server, subs, cfAccess);
 
   return server;
 }

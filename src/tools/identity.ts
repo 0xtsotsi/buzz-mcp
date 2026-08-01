@@ -16,9 +16,12 @@ import { z } from "zod";
 import type { SignedFetchResult } from "../relay/client.js";
 import { buildAddMember, buildCreateChannel } from "../relay/event-builder.js";
 import { getPublicKey, type NostrEvent, type NsecOrHex } from "../relay/signer.js";
-import { formatRelayError, signedFetchWithTimeout } from "../util/relay-call.js";
+import { type CfAccess, formatRelayError, signedFetchWithTimeout } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
+
+/** Per-call timeout (default). 5s is generous; the relay acks in <1s. */
+const TOOL_TIMEOUT_MS = 5_000;
 
 /**
  * Probe the relay for NIP-11 info. Tries `/api/identity` first, then `/info`,
@@ -52,7 +55,12 @@ async function probeRelayInfo(
  * Register `buzz_identity`. No inputs. Returns the relay's NIP-11 info doc
  * (probed) plus the operator pubkey + npub derived from `BUZZ_PRIVATE_KEY`.
  */
-export function registerIdentityTool(server: McpServer, secret: NsecOrHex, relayUrl: string): void {
+export function registerIdentityTool(
+  server: McpServer,
+  secret: NsecOrHex,
+  relayUrl: string,
+  _cfAccess?: CfAccess,
+): void {
   server.tool(
     "buzz_identity",
     "Return the relay's NIP-11 info document and the operator's Nostr pubkey. " +
@@ -95,6 +103,7 @@ export function registerListChannelsTool(
   server: McpServer,
   secret: NsecOrHex,
   relayUrl: string,
+  cfAccess?: CfAccess,
 ): void {
   server.tool(
     "buzz_list_channels",
@@ -111,12 +120,17 @@ export function registerListChannelsTool(
 
       let resp: SignedFetchResult;
       try {
-        resp = await signedFetchWithTimeout(secret, {
-          method: "POST",
-          url: `${relayUrl.replace(/\/$/, "")}/query`,
-          body,
-          headers: { "content-type": "application/json" },
-        });
+        resp = await signedFetchWithTimeout(
+          secret,
+          {
+            method: "POST",
+            url: `${relayUrl.replace(/\/$/, "")}/query`,
+            body,
+            headers: { "content-type": "application/json" },
+          },
+          TOOL_TIMEOUT_MS,
+          cfAccess,
+        );
       } catch (err) {
         throw new Error(formatRelayError(relayUrl, { cause: err as Error }));
       }
@@ -186,6 +200,7 @@ export function registerCreateChannelTool(
   server: McpServer,
   secret: NsecOrHex,
   relayUrl: string,
+  cfAccess?: CfAccess,
 ): void {
   server.tool(
     "buzz_create_channel",
@@ -213,12 +228,17 @@ export function registerCreateChannelTool(
 
       let resp: SignedFetchResult;
       try {
-        resp = await signedFetchWithTimeout(secret, {
-          method: "POST",
-          url: `${relayUrl.replace(/\/$/, "")}/events`,
-          body: JSON.stringify(event),
-          headers: { "content-type": "application/json" },
-        });
+        resp = await signedFetchWithTimeout(
+          secret,
+          {
+            method: "POST",
+            url: `${relayUrl.replace(/\/$/, "")}/events`,
+            body: JSON.stringify(event),
+            headers: { "content-type": "application/json" },
+          },
+          TOOL_TIMEOUT_MS,
+          cfAccess,
+        );
       } catch (err) {
         throw new Error(formatRelayError(relayUrl, { cause: err as Error }));
       }
@@ -268,6 +288,7 @@ export function registerAddMemberTool(
   server: McpServer,
   secret: NsecOrHex,
   relayUrl: string,
+  cfAccess?: CfAccess,
 ): void {
   server.tool(
     "buzz_add_member",
@@ -291,12 +312,17 @@ export function registerAddMemberTool(
 
       let resp: SignedFetchResult;
       try {
-        resp = await signedFetchWithTimeout(secret, {
-          method: "POST",
-          url: `${relayUrl.replace(/\/$/, "")}/events`,
-          body: JSON.stringify(event),
-          headers: { "content-type": "application/json" },
-        });
+        resp = await signedFetchWithTimeout(
+          secret,
+          {
+            method: "POST",
+            url: `${relayUrl.replace(/\/$/, "")}/events`,
+            body: JSON.stringify(event),
+            headers: { "content-type": "application/json" },
+          },
+          TOOL_TIMEOUT_MS,
+          cfAccess,
+        );
       } catch (err) {
         throw new Error(formatRelayError(relayUrl, { cause: err as Error }));
       }

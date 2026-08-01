@@ -11,9 +11,12 @@ import { z } from "zod";
 import type { SignedFetchResult } from "../relay/client.js";
 import { buildJob, buildWorkflowApproval } from "../relay/event-builder.js";
 import type { NsecOrHex } from "../relay/signer.js";
-import { signedFetchWithTimeout } from "../util/relay-call.js";
+import { type CfAccess, signedFetchWithTimeout } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
+
+/** Per-call timeout (default). 5s is generous; the relay acks in <1s. */
+const TOOL_TIMEOUT_MS = 5_000;
 
 /**
  * Register `buzz_create_job`. POSTs a kind:43001 event to `/events`.
@@ -27,6 +30,7 @@ export function registerCreateJobTool(
   server: McpServer,
   secret: NsecOrHex,
   relayUrl: string,
+  cfAccess?: CfAccess,
 ): void {
   server.tool(
     "buzz_create_job",
@@ -54,12 +58,17 @@ export function registerCreateJobTool(
 
       let resp: SignedFetchResult;
       try {
-        resp = await signedFetchWithTimeout(secret, {
-          method: "POST",
-          url: `${relayUrl.replace(/\/$/, "")}/events`,
-          body: JSON.stringify(event),
-          headers: { "content-type": "application/json" },
-        });
+        resp = await signedFetchWithTimeout(
+          secret,
+          {
+            method: "POST",
+            url: `${relayUrl.replace(/\/$/, "")}/events`,
+            body: JSON.stringify(event),
+            headers: { "content-type": "application/json" },
+          },
+          TOOL_TIMEOUT_MS,
+          cfAccess,
+        );
       } catch (err) {
         throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
       }
@@ -111,6 +120,7 @@ export function registerApproveWorkflowTool(
   server: McpServer,
   secret: NsecOrHex,
   relayUrl: string,
+  cfAccess?: CfAccess,
 ): void {
   server.tool(
     "buzz_approve_workflow",
@@ -141,12 +151,17 @@ export function registerApproveWorkflowTool(
 
       let resp: SignedFetchResult;
       try {
-        resp = await signedFetchWithTimeout(secret, {
-          method: "POST",
-          url: `${relayUrl.replace(/\/$/, "")}/events`,
-          body: JSON.stringify(event),
-          headers: { "content-type": "application/json" },
-        });
+        resp = await signedFetchWithTimeout(
+          secret,
+          {
+            method: "POST",
+            url: `${relayUrl.replace(/\/$/, "")}/events`,
+            body: JSON.stringify(event),
+            headers: { "content-type": "application/json" },
+          },
+          TOOL_TIMEOUT_MS,
+          cfAccess,
+        );
       } catch (err) {
         throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
       }
