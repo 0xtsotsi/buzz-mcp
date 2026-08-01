@@ -25,6 +25,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { SignedFetchResult } from "../relay/client.js";
 import type { NsecOrHex } from "../relay/signer.js";
 import { signedFetchWithTimeout } from "../util/relay-call.js";
 
@@ -144,9 +145,8 @@ export function registerUploadMediaTool(
 
       let lastStatus = 0;
       let lastBody = "";
-      let lastPath = "";
       for (const url of endpoints) {
-        let resp;
+        let resp: SignedFetchResult;
         try {
           resp = await signedFetchWithTimeout(
             secret,
@@ -164,7 +164,6 @@ export function registerUploadMediaTool(
 
         lastStatus = resp.status;
         lastBody = resp.bodyText;
-        lastPath = url;
         if (resp.status >= 200 && resp.status < 300) {
           // Parse the URL out of the relay's ack body — the shape is
           // `{url: "…"}`, `{sha256: "…", url: "…"}`, or just the URL string.

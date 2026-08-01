@@ -13,8 +13,6 @@ const HEX64_REGEX = /^[0-9a-f]{64}$/;
 
 // Bech32 alphabet used by NIP-19 (BIP-173): `[0-9a-z]` minus `b`, `i`, `o`, `1`.
 // We exclude `1` too because bech32 forbids it in the data part.
-const BECH32_DATA_REGEX = /^[023456789ac-hj-np-z]+$/;
-
 /**
  * Generic 64-char lowercase hex string. The base shape for `pubkey` and
  * `eventId`.

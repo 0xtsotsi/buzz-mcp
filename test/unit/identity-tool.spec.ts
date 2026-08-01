@@ -96,7 +96,7 @@ describe("buzz_identity", () => {
       limitation: { max_message_length: 65536 },
     };
     fetchSpy = makeFetchSpy(
-      async (url) =>
+      async (_url) =>
         new Response(JSON.stringify(info), {
           status: 200,
           headers: { "content-type": "application/json" },

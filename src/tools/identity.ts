@@ -13,6 +13,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { npubEncode } from "nostr-tools/nip19";
 import { z } from "zod";
+import type { SignedFetchResult } from "../relay/client.js";
 import { buildAddMember, buildCreateChannel } from "../relay/event-builder.js";
 import { getPublicKey, type NostrEvent, type NsecOrHex } from "../relay/signer.js";
 import { formatRelayError, signedFetchWithTimeout } from "../util/relay-call.js";
@@ -108,7 +109,7 @@ export function registerListChannelsTool(
         limit: 100,
       });
 
-      let resp;
+      let resp: SignedFetchResult;
       try {
         resp = await signedFetchWithTimeout(secret, {
           method: "POST",
@@ -210,7 +211,7 @@ export function registerCreateChannelTool(
         description: args.description,
       });
 
-      let resp;
+      let resp: SignedFetchResult;
       try {
         resp = await signedFetchWithTimeout(secret, {
           method: "POST",
@@ -288,7 +289,7 @@ export function registerAddMemberTool(
         role: args.role,
       });
 
-      let resp;
+      let resp: SignedFetchResult;
       try {
         resp = await signedFetchWithTimeout(secret, {
           method: "POST",

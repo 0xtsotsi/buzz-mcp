@@ -71,6 +71,7 @@ describe("buzz_post_message tool", () => {
     vi.restoreAllMocks();
   });
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: ${RELAY} is a placeholder, not a template.
   it("POSTs to ${RELAY}/events with a NIP-98 Authorization header", async () => {
     const ack = { ok: true, id: "a".repeat(64) };
     fetchSpy = makeFetchSpy(async () => new Response(JSON.stringify(ack), { status: 202 }));

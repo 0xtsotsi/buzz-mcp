@@ -8,6 +8,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { SignedFetchResult } from "../relay/client.js";
 import { signedFetch } from "../relay/client.js";
 import { buildThreadSummary } from "../relay/event-builder.js";
 import type { NsecOrHex } from "../relay/signer.js";
@@ -70,7 +71,7 @@ export function registerPostThreadSummaryTool(
         summary: args.summary,
       });
 
-      let resp;
+      let resp: SignedFetchResult;
       try {
         resp = await withTimeout(
           signedFetch(secret, {

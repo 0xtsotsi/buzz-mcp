@@ -9,7 +9,6 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { SignedFetchResult } from "../relay/client.js";
 import type { NostrEvent, NsecOrHex } from "../relay/signer.js";
 import { signedFetchWithTimeout } from "../util/relay-call.js";
 
@@ -70,6 +69,8 @@ function asEventArray(parsed: unknown): NostrEvent[] | null {
  * transport / timeout failure; relay 4xx is returned to the caller so the
  * search tool can implement its fallback path.
  */
+type QueryResult = { status: number; bodyText: string };
+
 async function postQuery(
   secret: NsecOrHex,
   relayUrl: string,
@@ -106,7 +107,7 @@ export function registerFetchEventsTool(
         filter.limit = DEFAULT_LIMIT;
       }
 
-      let resp;
+      let resp: QueryResult;
       try {
         resp = await postQuery(secret, relayUrl, filter);
       } catch (err) {
@@ -169,7 +170,7 @@ export function registerSearchTool(server: McpServer, secret: NsecOrHex, relayUr
       }
 
       // First attempt: relay-side NIP-50 search.
-      let resp;
+      let resp: QueryResult;
       try {
         resp = await postQuery(secret, relayUrl, {
           ...baseFilter,

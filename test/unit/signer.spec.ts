@@ -95,7 +95,7 @@ describe("signer", () => {
     it("returns a 64-byte signature and is deterministic for the same inputs", () => {
       const msg = new TextEncoder().encode("hello, world");
       const sig1 = signSchnorr(SECRET_HEX, msg);
-      const sig2 = signSchnorr(SECRET_HEX, msg);
+      const _sig2 = signSchnorr(SECRET_HEX, msg);
       expect(sig1).toBeInstanceOf(Uint8Array);
       expect(sig1.length).toBe(64);
       // BIP-340 noble default is non-deterministic (uses auxRand = randomBytes),

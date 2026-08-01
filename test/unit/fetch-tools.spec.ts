@@ -210,7 +210,7 @@ describe("buzz_search", () => {
       content: "goodbye world",
     };
 
-    fetchSpy = makeFetchSpy(async (url, init) => {
+    fetchSpy = makeFetchSpy(async (_url, init) => {
       const body = JSON.parse((init as RequestInit).body as string);
       if (body.search !== undefined) {
         return new Response("unknown search field", { status: 400 });

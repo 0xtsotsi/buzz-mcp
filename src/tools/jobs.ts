@@ -8,6 +8,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { SignedFetchResult } from "../relay/client.js";
 import { buildJob, buildWorkflowApproval } from "../relay/event-builder.js";
 import type { NsecOrHex } from "../relay/signer.js";
 import { signedFetchWithTimeout } from "../util/relay-call.js";
@@ -51,7 +52,7 @@ export function registerCreateJobTool(
         dueAt: args.dueAt,
       });
 
-      let resp;
+      let resp: SignedFetchResult;
       try {
         resp = await signedFetchWithTimeout(secret, {
           method: "POST",
@@ -138,7 +139,7 @@ export function registerApproveWorkflowTool(
         comment: args.comment,
       });
 
-      let resp;
+      let resp: SignedFetchResult;
       try {
         resp = await signedFetchWithTimeout(secret, {
           method: "POST",
