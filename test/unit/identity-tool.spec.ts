@@ -188,8 +188,8 @@ describe("buzz_list_channels", () => {
       fetchSpy.calls[0].init.headers["Authorization"];
     expect(authHeader).toMatch(/^Nostr /);
     const body = JSON.parse(fetchSpy.calls[0].init.body);
-    expect(body.kinds).toEqual([9007]);
-    expect(body.authors).toEqual([EXPECTED_PUBKEY]);
+    // POST /query body is an array of filter objects (NIP-01).
+    expect(body).toEqual([{ kinds: [9007], authors: [EXPECTED_PUBKEY], limit: 100 }]);
 
     const parsed = parseText(result) as {
       channels: Array<{ id: string; name: string; visibility: string }>;

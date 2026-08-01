@@ -112,11 +112,15 @@ export function registerListChannelsTool(
     {},
     async () => {
       const operatorHex = getPublicKey(secret);
-      const body = JSON.stringify({
-        kinds: [9007],
-        authors: [operatorHex],
-        limit: 100,
-      });
+      // NIP-01: filters is an array of filter objects. Wrap the single filter
+      // so the relay's strict deserializer sees a sequence, not a map.
+      const body = JSON.stringify([
+        {
+          kinds: [9007],
+          authors: [operatorHex],
+          limit: 100,
+        },
+      ]);
 
       let resp: SignedFetchResult;
       try {
