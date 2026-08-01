@@ -34,7 +34,7 @@ describe("buildCreateChannel", () => {
     expect(evt.id).toMatch(/^[0-9a-f]{64}$/);
     expect(evt.sig).toMatch(/^[0-9a-f]{128}$/);
     expect(findTag(evt, "name")).toEqual(["name", "general"]);
-    expect(findTag(evt, "visibility")).toEqual(["visibility", "public"]);
+    expect(findTag(evt, "visibility")).toEqual(["visibility", "open"]);
     expect(findTag(evt, "client")).toEqual(["client", "buzz-mcp"]);
   });
 

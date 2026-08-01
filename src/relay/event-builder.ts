@@ -89,8 +89,8 @@ export type BuildCreateChannelOptions = {
   secret: NsecOrHex;
   /** Channel name (NIP-29 `name` tag). 1–64 chars. */
   name: string;
-  /** "public" or "private" (default "public"). */
-  visibility?: "public" | "private";
+  /** "open" or "private" (default "open"). The relay accepts "open" or "private" only — "public" was a v0.1.0 spec guess that the deployed relay rejects. */
+  visibility?: "open" | "private";
   /** Free-form description (NIP-29 `about` tag). */
   description?: string;
 };
@@ -312,7 +312,7 @@ export async function buildCreateChannel(opts: BuildCreateChannelOptions): Promi
     ["client", "buzz-mcp"],
     ["t", "euc"],
     ["name", opts.name],
-    ["visibility", opts.visibility ?? "public"],
+    ["visibility", opts.visibility ?? "open"],
   ];
   if (opts.description !== undefined && opts.description.length > 0) {
     tags.push(["about", opts.description]);

@@ -213,9 +213,11 @@ export function registerCreateChannelTool(
     {
       name: z.string().min(1).max(64).describe("Channel name (NIP-29). Required."),
       visibility: z
-        .enum(["public", "private"])
+        .enum(["open", "private"])
         .optional()
-        .describe('Channel visibility (default "public").'),
+        .describe(
+          'Channel visibility (default "open"). The relay accepts "open" or "private" only — "public" was a v0.1.0 spec guess that the deployed relay rejects.',
+        ),
       description: z
         .string()
         .max(2048)
@@ -266,7 +268,7 @@ export function registerCreateChannelTool(
                 accepted: true,
                 channel: {
                   name: args.name,
-                  visibility: args.visibility ?? "public",
+                  visibility: args.visibility ?? "open",
                 },
               },
               null,
