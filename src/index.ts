@@ -9,31 +9,28 @@
  * PR #6 will add docs.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { type NsecOrHex } from "./relay/signer.js";
+import type { NsecOrHex } from "./relay/signer.js";
 import { SubscriptionManager } from "./relay/subscription.js";
-import {
-  registerEditMessageTool,
-  registerPostMessageTool,
-  registerReactTool,
-} from "./tools/messages.js";
+import { registerFetchEventsTool, registerSearchTool } from "./tools/fetch.js";
 import {
   registerAddMemberTool,
   registerCreateChannelTool,
   registerIdentityTool,
   registerListChannelsTool,
 } from "./tools/identity.js";
-import { registerFetchEventsTool, registerSearchTool } from "./tools/fetch.js";
-import {
-  registerApproveWorkflowTool,
-  registerCreateJobTool,
-} from "./tools/jobs.js";
+import { registerApproveWorkflowTool, registerCreateJobTool } from "./tools/jobs.js";
 import { registerUploadMediaTool } from "./tools/media.js";
-import { registerPostThreadSummaryTool } from "./tools/summaries.js";
+import {
+  registerEditMessageTool,
+  registerPostMessageTool,
+  registerReactTool,
+} from "./tools/messages.js";
 import {
   registerPollTool,
   registerSubscribeTool,
   registerUnsubscribeTool,
 } from "./tools/subscribe.js";
+import { registerPostThreadSummaryTool } from "./tools/summaries.js";
 
 const SERVER_NAME = "@buzz/mcp";
 const SERVER_VERSION = "0.1.0";
@@ -104,9 +101,7 @@ function buildInstructions(relayUrl: string, tools: string[]): string {
 export function createServer(): McpServer {
   const secret = process.env["BUZZ_PRIVATE_KEY"] as NsecOrHex | undefined;
   if (!secret) {
-    throw new Error(
-      "BUZZ_PRIVATE_KEY is not set. Add it to the env block in ~/.gg/mcp.json.",
-    );
+    throw new Error("BUZZ_PRIVATE_KEY is not set. Add it to the env block in ~/.gg/mcp.json.");
   }
 
   const relayUrl = process.env["BUZZ_RELAY_URL"] ?? DEFAULT_RELAY_URL;

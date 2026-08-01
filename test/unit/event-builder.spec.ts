@@ -5,17 +5,16 @@
  * deterministic across runs. The tests assert shape, not byte-for-byte
  * event ids, because the id depends on `created_at`.
  */
-import { describe, it, expect } from "vitest";
-import { getPublicKey } from "../../src/relay/signer.js";
+import { describe, expect, it } from "vitest";
 import {
-  buildMessage,
-  buildForumPost,
   buildEdit,
+  buildForumPost,
+  buildMessage,
   buildReaction,
 } from "../../src/relay/event-builder.js";
+import { getPublicKey } from "../../src/relay/signer.js";
 
-const SECRET =
-  "0000000000000000000000000000000000000000000000000000000000000001";
+const SECRET = "0000000000000000000000000000000000000000000000000000000000000001";
 const PUBKEY = getPublicKey(SECRET);
 
 const FIXED_TAGS_KEY = "imeta";

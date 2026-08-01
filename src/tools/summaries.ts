@@ -5,22 +5,19 @@
  * (`CorePrt-relay/crates/buzz-core/src/kind.rs:375`) referencing the
  * thread's root event with a NIP-10 `["e", root, "", "root"]` tag.
  */
-import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import type { SignedFetchResult } from "../relay/client.js";
 import { signedFetch } from "../relay/client.js";
-import { type NsecOrHex } from "../relay/signer.js";
 import { buildThreadSummary } from "../relay/event-builder.js";
+import type { NsecOrHex } from "../relay/signer.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
 const TOOL_TIMEOUT_MS = 5_000;
 const MAX_SUMMARY_BYTES = 32 * 1024;
 
-async function withTimeout<T>(
-  p: Promise<T>,
-  ms: number,
-  label: string,
-): Promise<T> {
+async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), ms);
   try {
@@ -65,9 +62,7 @@ export function registerPostThreadSummaryTool(
     async (args) => {
       const byteLen = new TextEncoder().encode(args.summary).byteLength;
       if (byteLen > MAX_SUMMARY_BYTES) {
-        throw new Error(
-          `summary is ${byteLen} bytes, exceeds ${MAX_SUMMARY_BYTES}-byte cap`,
-        );
+        throw new Error(`summary is ${byteLen} bytes, exceeds ${MAX_SUMMARY_BYTES}-byte cap`);
       }
 
       const event = await buildThreadSummary({
@@ -76,7 +71,7 @@ export function registerPostThreadSummaryTool(
         summary: args.summary,
       });
 
-      let resp;
+      let resp: SignedFetchResult;
       try {
         resp = await withTimeout(
           signedFetch(secret, {
@@ -89,9 +84,7 @@ export function registerPostThreadSummaryTool(
           "post thread summary",
         );
       } catch (err) {
-        throw new Error(
-          `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
-        );
+        throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
       }
 
       if (resp.status < 200 || resp.status >= 300) {

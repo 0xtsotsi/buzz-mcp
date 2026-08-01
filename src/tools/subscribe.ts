@@ -12,14 +12,14 @@
  * Errors thrown by `execute` are converted to MCP tool results by the SDK —
  * they never crash the transport.
  */
-import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 
-import {
+import type {
+  SubscriptionEvent,
+  SubscriptionFilter,
   SubscriptionManager,
-  type SubscriptionEvent,
-  type SubscriptionFilter,
 } from "../relay/subscription.js";
 
 /** Per-call timeout, milliseconds. The relay should ack in <2s; 5s is generous. */
@@ -74,9 +74,7 @@ const subscribeFilterSchema = z
       .positive()
       .max(SUBSCRIBE_MAX_LIMIT)
       .optional()
-      .describe(
-        `Result limit (default ${SUBSCRIBE_DEFAULT_LIMIT}, max ${SUBSCRIBE_MAX_LIMIT}).`,
-      ),
+      .describe(`Result limit (default ${SUBSCRIBE_DEFAULT_LIMIT}, max ${SUBSCRIBE_MAX_LIMIT}).`),
     search: z
       .string()
       .min(1)
@@ -99,10 +97,7 @@ const subscribeArgsSchema = z.object({
     .array(z.string().regex(/^[0-9a-f]{64}$/))
     .optional()
     .describe("Shortcut: filter by `#e` tag."),
-  "#t": z
-    .array(z.string().min(1).max(64))
-    .optional()
-    .describe("Shortcut: filter by `#t` tag."),
+  "#t": z.array(z.string().min(1).max(64)).optional().describe("Shortcut: filter by `#t` tag."),
   since: z.number().int().nonnegative().optional(),
   until: z.number().int().nonnegative().optional(),
   limit: z
@@ -111,13 +106,11 @@ const subscribeArgsSchema = z.object({
     .positive()
     .max(SUBSCRIBE_MAX_LIMIT)
     .optional()
-    .describe(
-      `Default ${SUBSCRIBE_DEFAULT_LIMIT}, max ${SUBSCRIBE_MAX_LIMIT}.`,
-    ),
+    .describe(`Default ${SUBSCRIBE_DEFAULT_LIMIT}, max ${SUBSCRIBE_MAX_LIMIT}.`),
   search: z.string().min(1).max(256).optional(),
-  filter: subscribeFilterSchema.optional().describe(
-    "Optional raw NIP-01 filter. Top-level shortcut fields override matching keys here.",
-  ),
+  filter: subscribeFilterSchema
+    .optional()
+    .describe("Optional raw NIP-01 filter. Top-level shortcut fields override matching keys here."),
 });
 
 const unsubscribeArgsSchema = z.object({
@@ -138,9 +131,7 @@ const pollArgsSchema = z.object({
     .positive()
     .max(POLL_MAX_MAX)
     .optional()
-    .describe(
-      `Max events to drain (default ${POLL_DEFAULT_MAX}, max ${POLL_MAX_MAX}).`,
-    ),
+    .describe(`Max events to drain (default ${POLL_DEFAULT_MAX}, max ${POLL_MAX_MAX}).`),
 });
 
 // ─── timeout helper ────────────────────────────────────────────────────────
@@ -156,10 +147,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race<T>([
     p,
     new Promise<T>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error(`${label}: timed out after ${ms}ms`)),
-        ms,
-      );
+      timer = setTimeout(() => reject(new Error(`${label}: timed out after ${ms}ms`)), ms);
     }),
   ]).finally(() => {
     if (timer !== null) clearTimeout(timer);
@@ -178,14 +166,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 function buildFilter(args: z.infer<typeof subscribeArgsSchema>): SubscriptionFilter {
   const fromFilter = (args.filter ?? {}) as Record<string, unknown>;
   const merged: Record<string, unknown> = { ...fromFilter };
-  for (const key of [
-    "kinds",
-    "authors",
-    "since",
-    "until",
-    "limit",
-    "search",
-  ] as const) {
+  for (const key of ["kinds", "authors", "since", "until", "limit", "search"] as const) {
     const v = args[key];
     if (v !== undefined) merged[key] = v;
   }
@@ -222,10 +203,7 @@ function textResult(value: unknown): { content: [{ type: "text"; text: string }]
  * on the initial WS open + NIP-42 auth; the 5s timeout catches the worst
  * case (relay is unreachable) and surfaces it as a tool error.
  */
-export function registerSubscribeTool(
-  server: McpServer,
-  subs: SubscriptionManager,
-): void {
+export function registerSubscribeTool(server: McpServer, subs: SubscriptionManager): void {
   server.tool(
     "buzz_subscribe",
     "Open a subscription on the relay's WebSocket. Returns a `sub_id` you " +
@@ -235,11 +213,7 @@ export function registerSubscribeTool(
     subscribeArgsSchema.shape,
     async (args) => {
       const filter = buildFilter(args);
-      const sub_id = await withTimeout(
-        subs.subscribe(filter),
-        TOOL_TIMEOUT_MS,
-        "buzz_subscribe",
-      );
+      const sub_id = await withTimeout(subs.subscribe(filter), TOOL_TIMEOUT_MS, "buzz_subscribe");
       return textResult({ sub_id, open: true, filter });
     },
   );
@@ -249,10 +223,7 @@ export function registerSubscribeTool(
  * Register `buzz_unsubscribe`. Sends `["CLOSE", subId]` and removes the sub
  * from the manager. No-op for an unknown sub_id (returns `closed: false`).
  */
-export function registerUnsubscribeTool(
-  server: McpServer,
-  subs: SubscriptionManager,
-): void {
+export function registerUnsubscribeTool(server: McpServer, subs: SubscriptionManager): void {
   server.tool(
     "buzz_unsubscribe",
     "Close a subscription opened by buzz_subscribe. Sends [" +
@@ -261,11 +232,7 @@ export function registerUnsubscribeTool(
     unsubscribeArgsSchema.shape,
     async (args) => {
       const before = subs.listSubs().includes(args.subId);
-      await withTimeout(
-        subs.unsubscribe(args.subId),
-        TOOL_TIMEOUT_MS,
-        "buzz_unsubscribe",
-      );
+      await withTimeout(subs.unsubscribe(args.subId), TOOL_TIMEOUT_MS, "buzz_unsubscribe");
       return textResult({ sub_id: args.subId, closed: before });
     },
   );
@@ -275,10 +242,7 @@ export function registerUnsubscribeTool(
  * Register `buzz_poll`. Drains up to `max` events from the named sub's FIFO
  * buffer in declaration order. Returns `{sub_id, events, remaining}`.
  */
-export function registerPollTool(
-  server: McpServer,
-  subs: SubscriptionManager,
-): void {
+export function registerPollTool(server: McpServer, subs: SubscriptionManager): void {
   server.tool(
     "buzz_poll",
     "Drain buffered events from a subscription. Returns up to `max` events " +

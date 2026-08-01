@@ -1,15 +1,13 @@
 /**
  * Unit tests for buzz_create_job and buzz_approve_workflow.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  registerApproveWorkflowTool,
-  registerCreateJobTool,
-} from "../../src/tools/jobs.js";
+import { registerApproveWorkflowTool, registerCreateJobTool } from "../../src/tools/jobs.js";
 
 const SECRET = "0000000000000000000000000000000000000000000000000000000000000001";
 const RELAY = "https://relay.test";
@@ -19,9 +17,7 @@ interface FetchCall {
   init: { method: string; headers: Record<string, string>; body: string };
 }
 
-function makeFetchSpy(
-  impl: (url: string, init: RequestInit) => Promise<Response> | Response,
-) {
+function makeFetchSpy(impl: (url: string, init: RequestInit) => Promise<Response> | Response) {
   const calls: FetchCall[] = [];
   const spy = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const u = typeof url === "string" ? url : url.toString();
@@ -50,11 +46,7 @@ function makeFetchSpy(
   return { spy, calls };
 }
 
-type RegisterFn = (
-  server: McpServer,
-  secret: typeof SECRET,
-  relay: string,
-) => void;
+type RegisterFn = (server: McpServer, secret: typeof SECRET, relay: string) => void;
 
 async function makeServerAndClient(register: RegisterFn) {
   const server = new McpServer(
@@ -62,10 +54,7 @@ async function makeServerAndClient(register: RegisterFn) {
     { capabilities: {}, instructions: "test" },
   );
   register(server, SECRET, RELAY);
-  const client = new Client(
-    { name: "test-client", version: "0.0.0" },
-    { capabilities: {} },
-  );
+  const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await Promise.all([client.connect(ct), server.connect(st)]);
   return { server, client };
@@ -110,8 +99,7 @@ describe("buzz_create_job", () => {
     expect(fetchSpy.calls).toHaveLength(1);
     const call = fetchSpy.calls[0];
     expect(call.url).toBe(`${RELAY}/events`);
-    const auth =
-      call.init.headers["authorization"] ?? call.init.headers["Authorization"];
+    const auth = call.init.headers["authorization"] ?? call.init.headers["Authorization"];
     expect(auth).toMatch(/^Nostr /);
 
     const body = JSON.parse(call.init.body);
@@ -119,15 +107,9 @@ describe("buzz_create_job", () => {
     expect(body.content).toBe("long description");
     const tags = body.tags as string[][];
     expect(tags.find((t) => t[0] === "title")).toEqual(["title", "ship X"]);
-    expect(tags.find((t) => t[0] === "summary")).toEqual([
-      "summary",
-      "long description",
-    ]);
+    expect(tags.find((t) => t[0] === "summary")).toEqual(["summary", "long description"]);
     expect(tags.find((t) => t[0] === "amount")).toEqual(["amount", "1000"]);
-    expect(tags.find((t) => t[0] === "due")).toEqual([
-      "due",
-      "2026-12-31T00:00:00Z",
-    ]);
+    expect(tags.find((t) => t[0] === "due")).toEqual(["due", "2026-12-31T00:00:00Z"]);
 
     const parsed = parseText(result) as {
       event_id: string;
@@ -141,9 +123,7 @@ describe("buzz_create_job", () => {
   });
 
   it("surfaces a 4xx as an error", async () => {
-    fetchSpy = makeFetchSpy(
-      async () => new Response("no", { status: 422 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response("no", { status: 422 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient(registerCreateJobTool);

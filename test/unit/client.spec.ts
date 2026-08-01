@@ -1,17 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sha256 } from "@noble/hashes/sha2";
 import { bytesToHex } from "@noble/hashes/utils";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import {
-  signedFetch,
-  type SignedFetchOptions,
-} from "../../src/relay/client.js";
-import { getPublicKey } from "../../src/relay/signer.js";
+import { type SignedFetchOptions, signedFetch } from "../../src/relay/client.js";
 
-const SECRET =
-  "0000000000000000000000000000000000000000000000000000000000000001";
-const EXPECTED_PUBKEY =
-  "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+const SECRET = "0000000000000000000000000000000000000000000000000000000000000001";
+const EXPECTED_PUBKEY = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
 
 type CapturedCall = {
   url: string;
@@ -39,10 +33,7 @@ function decodeAuthEvent(authValue: string): {
 beforeEach(() => {
   captured = [];
   originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (
-    url: string | URL | Request,
-    init?: RequestInit,
-  ) => {
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     captured.push({ url: String(url), init });
     const headers = new Headers(init?.headers ?? {});
     return new Response("ok", { status: 200, headers });
@@ -69,9 +60,8 @@ describe("signedFetch", () => {
     expect(call.url).toBe("https://relay.example/api/hello");
     expect(call.init?.method).toBe("GET");
 
-    const authHeader = (call.init?.headers as Record<string, string>)[
-      "Authorization"
-    ];
+    if (!call.init) throw new Error("expected signedFetch to be called");
+    const authHeader = (call.init.headers as Record<string, string>)["Authorization"];
     expect(authHeader).toBeTruthy();
 
     const evt = decodeAuthEvent(authHeader);
@@ -123,9 +113,8 @@ describe("signedFetch", () => {
       body: bytes,
     });
     const call = captured[0];
-    const evt = decodeAuthEvent(
-      (call.init?.headers as Record<string, string>)["Authorization"],
-    );
+    if (!call.init) throw new Error("expected signedFetch to be called");
+    const evt = decodeAuthEvent((call.init.headers as Record<string, string>)["Authorization"]);
     const tagsByName = new Map(evt.tags.map((t) => [t[0], t.slice(1)]));
     const expectedPayload = bytesToHex(sha256(bytes));
     expect(tagsByName.get("payload")).toEqual([expectedPayload]);
@@ -137,8 +126,9 @@ describe("signedFetch", () => {
       method: "GET",
       url: "https://relay.example/ping",
     });
+    if (!captured[0].init) throw new Error("expected signedFetch to be called");
     const evt = decodeAuthEvent(
-      (captured[0].init?.headers as Record<string, string>)["Authorization"],
+      (captured[0].init.headers as Record<string, string>)["Authorization"],
     );
     const serialized = JSON.stringify([
       0,
@@ -148,9 +138,7 @@ describe("signedFetch", () => {
       evt.tags,
       evt.content,
     ]);
-    const expectedId = bytesToHex(
-      sha256(new TextEncoder().encode(serialized)),
-    );
+    const expectedId = bytesToHex(sha256(new TextEncoder().encode(serialized)));
     expect(evt.id).toBe(expectedId);
   });
 

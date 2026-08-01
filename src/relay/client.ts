@@ -11,7 +11,7 @@
 import { sha256 } from "@noble/hashes/sha2";
 import { bytesToHex } from "@noble/hashes/utils";
 
-import { signEvent, type Hex64, type NsecOrHex, type NostrEvent } from "./signer.js";
+import { type Hex64, type NostrEvent, type NsecOrHex, signEvent } from "./signer.js";
 
 // ─── Public types ──────────────────────────────────────────────────────────
 
@@ -115,4 +115,4 @@ export async function signedFetch(
   return { status: res.status, headers: res.headers, bodyText };
 }
 
-export type { Hex64, NsecOrHex, NostrEvent };
+export type { Hex64, NostrEvent, NsecOrHex };

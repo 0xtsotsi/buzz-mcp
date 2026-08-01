@@ -14,23 +14,20 @@
  * `authTimeoutMs` window elapses — the manager defaults are tuned short
  * enough for the test suite).
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  SubscriptionManager,
-  type SubscriptionEvent,
-} from "../../src/relay/subscription.js";
+import { type SubscriptionEvent, SubscriptionManager } from "../../src/relay/subscription.js";
 import {
   registerPollTool,
   registerSubscribeTool,
   registerUnsubscribeTool,
 } from "../../src/tools/subscribe.js";
 
-const SECRET =
-  "0000000000000000000000000000000000000000000000000000000000000001";
+const SECRET = "0000000000000000000000000000000000000000000000000000000000000001";
 const RELAY = "wss://relay.test";
 const AUTH_TIMEOUT_MS = 50;
 
@@ -131,7 +128,10 @@ class FakeWS {
 
 interface FetchSpy {
   spy: ReturnType<typeof vi.fn>;
-  calls: Array<{ url: string; init: { method: string; headers: Record<string, string>; body: string } }>;
+  calls: Array<{
+    url: string;
+    init: { method: string; headers: Record<string, string>; body: string };
+  }>;
 }
 
 function makeFetchSpy(
@@ -176,10 +176,7 @@ async function makeServerAndClient(
     { capabilities: {}, instructions: "test" },
   );
   register(server, subs);
-  const client = new Client(
-    { name: "test-client", version: "0.0.0" },
-    { capabilities: {} },
-  );
+  const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await Promise.all([client.connect(ct), server.connect(st)]);
   return { server, client };
@@ -220,9 +217,7 @@ describe("buzz_subscribe", () => {
     originalFetch = globalThis.fetch;
     // NIP-42 auth opens up no other endpoints in this PR, but be defensive:
     // any unintended fetch would surface as a missing-spied fetch error.
-    const { spy } = makeFetchSpy(async () =>
-      new Response("not used", { status: 599 }),
-    );
+    const { spy } = makeFetchSpy(async () => new Response("not used", { status: 599 }));
     globalThis.fetch = spy as unknown as typeof fetch;
     FakeWS.lastInstance = null;
   });
@@ -263,7 +258,13 @@ describe("buzz_subscribe", () => {
     // Look for the AUTH reply.
     const authSent = ws!.sentMessages
       .map((s) => JSON.parse(s) as unknown[])
-      .find((m) => Array.isArray(m) && m[0] === "AUTH" && m.length >= 2 && typeof (m[1] as { kind?: unknown }).kind === "number");
+      .find(
+        (m) =>
+          Array.isArray(m) &&
+          m[0] === "AUTH" &&
+          m.length >= 2 &&
+          typeof (m[1] as { kind?: unknown }).kind === "number",
+      );
     expect(authSent, "expected an [" + '"AUTH", <signed event>]: reply').toBeDefined();
     const authFrame = authSent as [string, { kind: number; tags: string[][] }];
     expect(authFrame[1].kind).toBe(22242);
@@ -360,10 +361,7 @@ describe("buzz_unsubscribe", () => {
     // CLOSE was sent on the WS for the same sub_id.
     const closeSent = ws.sentMessages
       .map((s) => JSON.parse(s) as unknown[])
-      .find(
-        (m) =>
-          Array.isArray(m) && m[0] === "CLOSE" && m.length >= 2 && m[1] === sub_id,
-      );
+      .find((m) => Array.isArray(m) && m[0] === "CLOSE" && m.length >= 2 && m[1] === sub_id);
     expect(closeSent).toBeDefined();
 
     // Sub is removed locally.
@@ -430,11 +428,7 @@ describe("buzz_poll", () => {
     };
     expect(parsedFirst.sub_id).toBe(sub_id);
     expect(parsedFirst.events).toHaveLength(3);
-    expect(parsedFirst.events.map((e) => e.content)).toEqual([
-      "first",
-      "second",
-      "third",
-    ]);
+    expect(parsedFirst.events.map((e) => e.content)).toEqual(["first", "second", "third"]);
     expect(parsedFirst.events[0].id).toBe("1".repeat(64));
     expect(parsedFirst.remaining).toBe(0);
 

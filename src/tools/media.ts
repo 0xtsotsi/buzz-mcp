@@ -19,16 +19,15 @@
  * filesystem outside `filePath`.
  */
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { resolve, isAbsolute, relative, sep } from "node:path";
 import { realpathSync, statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import process from "node:process";
-
-import { z } from "zod";
-
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import type { SignedFetchResult } from "../relay/client.js";
+import type { NsecOrHex } from "../relay/signer.js";
 import { signedFetchWithTimeout } from "../util/relay-call.js";
-import { type NsecOrHex } from "../relay/signer.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
 const TOOL_TIMEOUT_MS = 30_000; // uploads can be slow; 30s ceiling
@@ -83,11 +82,7 @@ export function registerUploadMediaTool(
       "relative to the operator's CWD, max 1 MiB). Returns the relay-assigned " +
       "URL plus client-side sha256 and mime.",
     {
-      mime: z
-        .string()
-        .min(1)
-        .max(128)
-        .describe("MIME type, e.g. \"image/png\". Required."),
+      mime: z.string().min(1).max(128).describe('MIME type, e.g. "image/png". Required.'),
       data: z
         .string()
         .min(1)
@@ -102,7 +97,7 @@ export function registerUploadMediaTool(
         .optional()
         .describe(
           "Filesystem path of the media (resolved relative to the operator's CWD). " +
-          "Mutually exclusive with `data`.",
+            "Mutually exclusive with `data`.",
         ),
       blurhash: z
         .string()
@@ -120,6 +115,7 @@ export function registerUploadMediaTool(
       if (args.data !== undefined) {
         bytes = base64ToBytes(args.data);
       } else {
+        // biome-ignore lint/style/noNonNullAssertion: Zod refine guarantees exactly one of data/filePath is set
         const absPath = ensureInsideCwd(args.filePath!);
         // Check the size BEFORE reading so a 1 GiB file doesn't blow up the
         // process. 1 MiB cap matches MAX_BYTES.
@@ -150,9 +146,8 @@ export function registerUploadMediaTool(
 
       let lastStatus = 0;
       let lastBody = "";
-      let lastPath = "";
       for (const url of endpoints) {
-        let resp;
+        let resp: SignedFetchResult;
         try {
           resp = await signedFetchWithTimeout(
             secret,
@@ -165,14 +160,11 @@ export function registerUploadMediaTool(
             TOOL_TIMEOUT_MS,
           );
         } catch (err) {
-          throw new Error(
-            `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
-          );
+          throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
         }
 
         lastStatus = resp.status;
         lastBody = resp.bodyText;
-        lastPath = url;
         if (resp.status >= 200 && resp.status < 300) {
           // Parse the URL out of the relay's ack body — the shape is
           // `{url: "…"}`, `{sha256: "…", url: "…"}`, or just the URL string.

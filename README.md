@@ -38,22 +38,22 @@ Tools are registered in alphabetical order (`REGISTERED_TOOLS` in
 
 | Tool | Read/Write | One-line |
 | ---- | ---------- | -------- |
-| `buzz_add_member`        | write          | Publish a `kind:9000` NIP-29 `add_member` event. |
-| `buzz_approve_workflow`  | write          | Publish `kind:46030` (approve) or `kind:46031` (reject) referencing a workflow. |
-| `buzz_create_channel`    | write          | Publish a `kind:9007` NIP-29 `create_channel` event. |
-| `buzz_create_job`        | write          | Publish a `kind:43001` `KIND_JOB_REQUEST` event. |
-| `buzz_edit_message`      | write          | Publish a `kind:40003` edit referencing an existing message. |
-| `buzz_fetch_events`      | read           | POST a NIP-01 filter to `/query`; returns the raw event array. |
-| `buzz_identity`          | read           | Relay NIP-11 info doc + the operator's derived pubkey/npub. |
-| `buzz_list_channels`     | read           | `kind:9007` NIP-29 channels visible to the operator. |
-| `buzz_poll`              | read           | Drain buffered `EVENT` frames from a `sub_id` (FIFO). |
-| `buzz_post_message`      | write          | Publish a `kind:9` NIP-29 stream message; reply via NIP-10. |
-| `buzz_post_thread_summary` | write        | Publish a `kind:39005` `KIND_THREAD_SUMMARY` event. |
-| `buzz_react`             | write          | Publish a `kind:7` NIP-25 reaction. |
-| `buzz_search`            | read           | NIP-50 free-text search (falls back to client-side `includes`). |
-| `buzz_subscribe`         | side-effect    | Open a `["REQ", sub_id, filter]` against the shared WS. |
-| `buzz_unsubscribe`       | side-effect    | Send `["CLOSE", sub_id]` and drop it from the manager. |
-| `buzz_upload_media`      | write          | `PUT /media/upload` (or `/upload`); base64 or CWD-scoped path; max 1 MiB. |
+| `buzz_add_member` | write | Publish a `kind:9000` NIP-29 `add_member` event. |
+| `buzz_approve_workflow` | write | Publish `kind:46030` (approve) or `kind:46031` (reject) referencing a workflow. |
+| `buzz_create_channel` | write | Publish a `kind:9007` NIP-29 `create_channel` event. |
+| `buzz_create_job` | write | Publish a `kind:43001` `KIND_JOB_REQUEST` event. |
+| `buzz_edit_message` | write | Publish a `kind:40003` edit referencing an existing message. |
+| `buzz_fetch_events` | read | POST a NIP-01 filter to `/query`; returns the raw event array. |
+| `buzz_identity` | read | Relay NIP-11 info doc + the operator's derived pubkey/npub. |
+| `buzz_list_channels` | read | `kind:9007` NIP-29 channels visible to the operator. |
+| `buzz_poll` | read | Drain buffered `EVENT` frames from a `sub_id` (FIFO). |
+| `buzz_post_message` | write | Publish a `kind:9` NIP-29 stream message; reply via NIP-10. |
+| `buzz_post_thread_summary` | write | Publish a `kind:39005` `KIND_THREAD_SUMMARY` event. |
+| `buzz_react` | write | Publish a `kind:7` NIP-25 reaction. |
+| `buzz_search` | read | NIP-50 free-text search (falls back to client-side `includes`). |
+| `buzz_subscribe` | side-effect | Open a `["REQ", sub_id, filter]` against the shared WS. |
+| `buzz_unsubscribe` | side-effect | Send `["CLOSE", sub_id]` and drop it from the manager. |
+| `buzz_upload_media` | write | `PUT /media/upload` (or `/upload`); base64 or CWD-scoped path; max 1 MiB. |
 
 Grouped by category:
 

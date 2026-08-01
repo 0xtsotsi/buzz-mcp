@@ -6,11 +6,10 @@
  * search support is best-effort: if the relay 4xx's on `search` we fall back
  * to a plain fetch + client-side `content.includes(search)` filter.
  */
-import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { type SignedFetchResult } from "../relay/client.js";
-import { type NsecOrHex, type NostrEvent } from "../relay/signer.js";
+import { z } from "zod";
+import type { NostrEvent, NsecOrHex } from "../relay/signer.js";
 import { signedFetchWithTimeout } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
@@ -25,9 +24,7 @@ const MAX_LIMIT = 500;
 const filterSchema = z
   .object({
     kinds: z.array(z.number().int().min(0).max(65535)).optional(),
-    authors: z
-      .array(z.string().regex(/^[0-9a-f]{64}$/))
-      .optional(),
+    authors: z.array(z.string().regex(/^[0-9a-f]{64}$/)).optional(),
     "#e": z.array(z.string().regex(/^[0-9a-f]{64}$/)).optional(),
     "#t": z.array(z.string()).optional(),
     since: z.number().int().nonnegative().optional(),
@@ -72,6 +69,8 @@ function asEventArray(parsed: unknown): NostrEvent[] | null {
  * transport / timeout failure; relay 4xx is returned to the caller so the
  * search tool can implement its fallback path.
  */
+type QueryResult = { status: number; bodyText: string };
+
 async function postQuery(
   secret: NsecOrHex,
   relayUrl: string,
@@ -100,9 +99,7 @@ export function registerFetchEventsTool(
     "Fetch events matching a NIP-01 filter. POSTs the filter to /query and " +
       "returns the raw event array. The filter shape mirrors what /query accepts.",
     {
-      filter: filterSchema.describe(
-        "NIP-01 filter object. `limit` defaults to 50, max 500.",
-      ),
+      filter: filterSchema.describe("NIP-01 filter object. `limit` defaults to 50, max 500."),
     },
     async (args) => {
       const filter: Record<string, unknown> = { ...args.filter };
@@ -110,13 +107,11 @@ export function registerFetchEventsTool(
         filter.limit = DEFAULT_LIMIT;
       }
 
-      let resp;
+      let resp: QueryResult;
       try {
         resp = await postQuery(secret, relayUrl, filter);
       } catch (err) {
-        throw new Error(
-          `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
-        );
+        throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
       }
 
       if (resp.status < 200 || resp.status >= 300) {
@@ -156,25 +151,17 @@ export function registerFetchEventsTool(
  * field for NIP-50 relay-side search. If the relay 4xx's on `search`, fall
  * back to fetching without it and filter client-side by `content.includes`.
  */
-export function registerSearchTool(
-  server: McpServer,
-  secret: NsecOrHex,
-  relayUrl: string,
-): void {
+export function registerSearchTool(server: McpServer, secret: NsecOrHex, relayUrl: string): void {
   server.tool(
     "buzz_search",
     "Search events by free-text query (NIP-50). Tries relay-side search first; " +
       "if the relay 4xx's on the `search` field, falls back to /query and " +
       "filters client-side by `event.content.includes(search)`.",
     {
-      search: z
-        .string()
-        .min(1)
-        .max(256)
-        .describe("Free-text search query. Required."),
-      filter: filterSchema.optional().describe(
-        "Optional NIP-01 filter to narrow the search. `limit` defaults to 50, max 500.",
-      ),
+      search: z.string().min(1).max(256).describe("Free-text search query. Required."),
+      filter: filterSchema
+        .optional()
+        .describe("Optional NIP-01 filter to narrow the search. `limit` defaults to 50, max 500."),
     },
     async (args) => {
       const baseFilter: Record<string, unknown> = { ...(args.filter ?? {}) };
@@ -183,16 +170,14 @@ export function registerSearchTool(
       }
 
       // First attempt: relay-side NIP-50 search.
-      let resp;
+      let resp: QueryResult;
       try {
         resp = await postQuery(secret, relayUrl, {
           ...baseFilter,
           search: args.search,
         });
       } catch (err) {
-        throw new Error(
-          `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
-        );
+        throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
       }
 
       let searchMode: "relay" | "client-side" = "relay";
@@ -205,9 +190,7 @@ export function registerSearchTool(
         try {
           resp = await postQuery(secret, relayUrl, baseFilter);
         } catch (err) {
-          throw new Error(
-            `relay at ${relayUrl} did not respond: ${(err as Error).message}`,
-          );
+          throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
         }
       }
 
@@ -233,20 +216,14 @@ export function registerSearchTool(
 
       if (searchMode === "client-side") {
         const needle = args.search;
-        events = events.filter(
-          (e) => typeof e.content === "string" && e.content.includes(needle),
-        );
+        events = events.filter((e) => typeof e.content === "string" && e.content.includes(needle));
       }
 
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(
-              { events, search_mode: searchMode },
-              null,
-              2,
-            ),
+            text: JSON.stringify({ events, search_mode: searchMode }, null, 2),
           },
         ],
       };

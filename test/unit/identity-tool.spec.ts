@@ -5,10 +5,11 @@
  * Uses the same in-memory MCP client + stubbed fetch pattern as
  * post-message-tool.spec.ts from PR #3.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   registerAddMemberTool,
@@ -26,9 +27,7 @@ interface FetchCall {
   init: { method: string; headers: Record<string, string>; body: string };
 }
 
-function makeFetchSpy(
-  impl: (url: string, init: RequestInit) => Promise<Response> | Response,
-) {
+function makeFetchSpy(impl: (url: string, init: RequestInit) => Promise<Response> | Response) {
   const calls: FetchCall[] = [];
   const spy = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const u = typeof url === "string" ? url : url.toString();
@@ -57,11 +56,7 @@ function makeFetchSpy(
   return { spy, calls };
 }
 
-type RegisterFn = (
-  server: McpServer,
-  secret: typeof SECRET,
-  relay: string,
-) => void;
+type RegisterFn = (server: McpServer, secret: typeof SECRET, relay: string) => void;
 
 async function makeServerAndClient(register: RegisterFn) {
   const server = new McpServer(
@@ -69,10 +64,7 @@ async function makeServerAndClient(register: RegisterFn) {
     { capabilities: {}, instructions: "test" },
   );
   register(server, SECRET, RELAY);
-  const client = new Client(
-    { name: "test-client", version: "0.0.0" },
-    { capabilities: {} },
-  );
+  const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await Promise.all([client.connect(ct), server.connect(st)]);
   return { server, client };
@@ -104,7 +96,7 @@ describe("buzz_identity", () => {
       limitation: { max_message_length: 65536 },
     };
     fetchSpy = makeFetchSpy(
-      async (url) =>
+      async (_url) =>
         new Response(JSON.stringify(info), {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -166,7 +158,7 @@ describe("buzz_list_channels", () => {
     vi.restoreAllMocks();
   });
 
-  it("POSTs a kind:9007 query and derives name from the [\"name\"] tag", async () => {
+  it('POSTs a kind:9007 query and derives name from the ["name"] tag', async () => {
     const event = {
       id: "a".repeat(64),
       pubkey: EXPECTED_PUBKEY,
@@ -179,9 +171,7 @@ describe("buzz_list_channels", () => {
       content: "",
       sig: "b".repeat(128),
     };
-    fetchSpy = makeFetchSpy(
-      async () => new Response(JSON.stringify([event]), { status: 200 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response(JSON.stringify([event]), { status: 200 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient(registerListChannelsTool);
@@ -213,9 +203,7 @@ describe("buzz_list_channels", () => {
   });
 
   it("surfaces a 4xx response as a tool error", async () => {
-    fetchSpy = makeFetchSpy(
-      async () => new Response("forbidden", { status: 403 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response("forbidden", { status: 403 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient(registerListChannelsTool);
@@ -247,9 +235,7 @@ describe("buzz_create_channel", () => {
 
   it("POSTs a kind:9007 event to /events with a NIP-98 Authorization header", async () => {
     const ack = { ok: true, event_id: "c".repeat(64) };
-    fetchSpy = makeFetchSpy(
-      async () => new Response(JSON.stringify(ack), { status: 202 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response(JSON.stringify(ack), { status: 202 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient(registerCreateChannelTool);
@@ -266,8 +252,7 @@ describe("buzz_create_channel", () => {
     const call = fetchSpy.calls[0];
     expect(call.url).toBe(`${RELAY}/events`);
     expect(call.init.method).toBe("POST");
-    const auth =
-      call.init.headers["authorization"] ?? call.init.headers["Authorization"];
+    const auth = call.init.headers["authorization"] ?? call.init.headers["Authorization"];
     expect(auth).toMatch(/^Nostr /);
 
     const body = JSON.parse(call.init.body);
@@ -276,15 +261,9 @@ describe("buzz_create_channel", () => {
     expect(body.sig).toMatch(/^[0-9a-f]{128}$/);
     const tags = body.tags as string[][];
     expect(tags.find((t) => t[0] === "name")).toEqual(["name", "general"]);
-    expect(tags.find((t) => t[0] === "visibility")).toEqual([
-      "visibility",
-      "private",
-    ]);
+    expect(tags.find((t) => t[0] === "visibility")).toEqual(["visibility", "private"]);
     // description becomes an `["about", ...]` tag.
-    expect(tags.find((t) => t[0] === "about")).toEqual([
-      "about",
-      "the main lobby",
-    ]);
+    expect(tags.find((t) => t[0] === "about")).toEqual(["about", "the main lobby"]);
 
     const parsed = parseText(result) as {
       event_id: string;
@@ -300,9 +279,7 @@ describe("buzz_create_channel", () => {
   });
 
   it("surfaces a non-2xx as an error", async () => {
-    fetchSpy = makeFetchSpy(
-      async () => new Response("nope", { status: 400 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response("nope", { status: 400 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient(registerCreateChannelTool);
@@ -384,9 +361,7 @@ describe("buzz_add_member", () => {
   });
 
   it("rejects a non-hex pubkey at the Zod layer", async () => {
-    fetchSpy = makeFetchSpy(
-      async () => new Response("", { status: 200 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response("", { status: 200 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient(registerAddMemberTool);

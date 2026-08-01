@@ -13,11 +13,12 @@
  * Errors thrown by `execute` are converted to MCP tool results by the SDK
  * — they never crash the stdio transport.
  */
-import { z } from "zod";
+
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { buildEdit, buildMessage, buildReaction, type ImetaEntry } from "../relay/event-builder.js";
+import type { NsecOrHex } from "../relay/signer.js";
 import { signedFetchWithTimeout } from "../util/relay-call.js";
-import { type NsecOrHex } from "../relay/signer.js";
-import { type ImetaEntry, buildEdit, buildMessage, buildReaction } from "../relay/event-builder.js";
 
 /** Hard cap on a single message body, in bytes (UTF-8). */
 const MAX_CONTENT_BYTES = 32 * 1024;
@@ -65,10 +66,7 @@ export function registerPostMessageTool(
         .min(1)
         .max(64)
         .describe("Channel name. Leading '#' is stripped. Required."),
-      content: z
-        .string()
-        .min(1)
-        .describe("Message body, UTF-8. Required. Hard cap 32KB."),
+      content: z.string().min(1).describe("Message body, UTF-8. Required. Hard cap 32KB."),
       replyTo: z
         .string()
         .regex(/^[0-9a-f]{64}$/)
@@ -96,9 +94,7 @@ export function registerPostMessageTool(
       // 1. Byte-length guard (the relay's max_plaintext_len is 32768).
       const bytes = new TextEncoder().encode(args.content).byteLength;
       if (bytes > MAX_CONTENT_BYTES) {
-        throw new Error(
-          `content is ${bytes} bytes, exceeds ${MAX_CONTENT_BYTES}-byte cap`,
-        );
+        throw new Error(`content is ${bytes} bytes, exceeds ${MAX_CONTENT_BYTES}-byte cap`);
       }
 
       // 2. Build the event (signs locally with the captured secret).
@@ -214,9 +210,7 @@ export function registerEditMessageTool(
     async (args) => {
       const byteLen = new TextEncoder().encode(args.content).byteLength;
       if (byteLen > MAX_CONTENT_BYTES) {
-        throw new Error(
-          `content is ${byteLen} bytes, exceeds ${MAX_CONTENT_BYTES}-byte cap`,
-        );
+        throw new Error(`content is ${byteLen} bytes, exceeds ${MAX_CONTENT_BYTES}-byte cap`);
       }
 
       const event = await buildEdit({
@@ -271,11 +265,7 @@ export function registerEditMessageTool(
  * `/events`. The emoji is held both as the event `content` and in the
  * `["content", emoji]` tag for legacy compatibility.
  */
-export function registerReactTool(
-  server: McpServer,
-  secret: NsecOrHex,
-  relayUrl: string,
-): void {
+export function registerReactTool(server: McpServer, secret: NsecOrHex, relayUrl: string): void {
   server.tool(
     "buzz_react",
     "Post a reaction (kind:7 NIP-25). Returns the event id, the target event " +
@@ -285,11 +275,7 @@ export function registerReactTool(
         .string()
         .regex(/^[0-9a-f]{64}$/, "must be 64 lowercase hex characters")
         .describe("Event id of the message being reacted to. Required."),
-      emoji: z
-        .string()
-        .min(1)
-        .max(16)
-        .describe("Emoji shortcode (1–16 chars). Required."),
+      emoji: z.string().min(1).max(16).describe("Emoji shortcode (1–16 chars). Required."),
     },
     async (args) => {
       const event = await buildReaction({

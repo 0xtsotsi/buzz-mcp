@@ -5,15 +5,13 @@
  * search tool tries the `search` field first, and falls back to a
  * client-side `content.includes` filter when the relay 4xx's.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  registerFetchEventsTool,
-  registerSearchTool,
-} from "../../src/tools/fetch.js";
+import { registerFetchEventsTool, registerSearchTool } from "../../src/tools/fetch.js";
 
 const SECRET = "0000000000000000000000000000000000000000000000000000000000000001";
 const RELAY = "https://relay.test";
@@ -23,9 +21,7 @@ interface FetchCall {
   init: { method: string; headers: Record<string, string>; body: string };
 }
 
-function makeFetchSpy(
-  impl: (url: string, init: RequestInit) => Promise<Response> | Response,
-) {
+function makeFetchSpy(impl: (url: string, init: RequestInit) => Promise<Response> | Response) {
   const calls: FetchCall[] = [];
   const spy = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const u = typeof url === "string" ? url : url.toString();
@@ -54,11 +50,7 @@ function makeFetchSpy(
   return { spy, calls };
 }
 
-type RegisterFn = (
-  server: McpServer,
-  secret: typeof SECRET,
-  relay: string,
-) => void;
+type RegisterFn = (server: McpServer, secret: typeof SECRET, relay: string) => void;
 
 async function makeServerAndClient(register: RegisterFn) {
   const server = new McpServer(
@@ -66,10 +58,7 @@ async function makeServerAndClient(register: RegisterFn) {
     { capabilities: {}, instructions: "test" },
   );
   register(server, SECRET, RELAY);
-  const client = new Client(
-    { name: "test-client", version: "0.0.0" },
-    { capabilities: {} },
-  );
+  const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await Promise.all([client.connect(ct), server.connect(st)]);
   return { server, client };
@@ -104,9 +93,7 @@ describe("buzz_fetch_events", () => {
       content: "hello",
       sig: "c".repeat(128),
     };
-    fetchSpy = makeFetchSpy(
-      async () => new Response(JSON.stringify([event]), { status: 200 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response(JSON.stringify([event]), { status: 200 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient(registerFetchEventsTool);
@@ -119,8 +106,7 @@ describe("buzz_fetch_events", () => {
     const call = fetchSpy.calls[0];
     expect(call.url).toBe(`${RELAY}/query`);
     expect(call.init.method).toBe("POST");
-    const auth =
-      call.init.headers["authorization"] ?? call.init.headers["Authorization"];
+    const auth = call.init.headers["authorization"] ?? call.init.headers["Authorization"];
     expect(auth).toMatch(/^Nostr /);
     const body = JSON.parse(call.init.body);
     expect(body).toEqual({ kinds: [1], limit: 10 });
@@ -132,9 +118,7 @@ describe("buzz_fetch_events", () => {
   });
 
   it("defaults the limit to 50 when not provided", async () => {
-    fetchSpy = makeFetchSpy(
-      async () => new Response(JSON.stringify([]), { status: 200 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response(JSON.stringify([]), { status: 200 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient(registerFetchEventsTool);
@@ -148,9 +132,7 @@ describe("buzz_fetch_events", () => {
   });
 
   it("surfaces a 4xx as an error", async () => {
-    fetchSpy = makeFetchSpy(
-      async () => new Response("bad", { status: 500 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response("bad", { status: 500 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient(registerFetchEventsTool);
@@ -189,9 +171,7 @@ describe("buzz_search", () => {
       content: "hello world",
       sig: "c".repeat(128),
     };
-    fetchSpy = makeFetchSpy(
-      async () => new Response(JSON.stringify([event]), { status: 200 }),
-    );
+    fetchSpy = makeFetchSpy(async () => new Response(JSON.stringify([event]), { status: 200 }));
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
     const { client } = await makeServerAndClient(registerSearchTool);
@@ -230,7 +210,7 @@ describe("buzz_search", () => {
       content: "goodbye world",
     };
 
-    fetchSpy = makeFetchSpy(async (url, init) => {
+    fetchSpy = makeFetchSpy(async (_url, init) => {
       const body = JSON.parse((init as RequestInit).body as string);
       if (body.search !== undefined) {
         return new Response("unknown search field", { status: 400 });

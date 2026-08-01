@@ -14,7 +14,7 @@
  *
  * No MCP, no IO, no fetch. Pure: only signs with the local signer.
  */
-import { signEvent, type NsecOrHex, type NostrEvent } from "./signer.js";
+import { type NostrEvent, type NsecOrHex, signEvent } from "./signer.js";
 
 // ─── Public types ──────────────────────────────────────────────────────────
 
@@ -86,7 +86,7 @@ export type BuildReactionOptions = {
 
 /** Options for {@link buildCreateChannel}. */
 export type BuildCreateChannelOptions = {
-  secret: NsecOrHex
+  secret: NsecOrHex;
   /** Channel name (NIP-29 `name` tag). 1–64 chars. */
   name: string;
   /** "public" or "private" (default "public"). */
@@ -97,7 +97,7 @@ export type BuildCreateChannelOptions = {
 
 /** Options for {@link buildAddMember}. */
 export type BuildAddMemberOptions = {
-  secret: NsecOrHex
+  secret: NsecOrHex;
   /** 64-char hex pubkey of the member being added. */
   pubkey: string;
   /** Member role. */
@@ -106,7 +106,7 @@ export type BuildAddMemberOptions = {
 
 /** Options for {@link buildJob}. */
 export type BuildJobOptions = {
-  secret: NsecOrHex
+  secret: NsecOrHex;
   /** Job title. */
   title: string;
   /** Job description (event content body). */
@@ -119,7 +119,7 @@ export type BuildJobOptions = {
 
 /** Options for {@link buildWorkflowApproval}. */
 export type BuildWorkflowApprovalOptions = {
-  secret: NsecOrHex
+  secret: NsecOrHex;
   /** Workflow id (64-char hex acceptable in v1). */
   workflowId: string;
   /** Approval decision. */
@@ -130,7 +130,7 @@ export type BuildWorkflowApprovalOptions = {
 
 /** Options for {@link buildThreadSummary}. */
 export type BuildThreadSummaryOptions = {
-  secret: NsecOrHex
+  secret: NsecOrHex;
   /** Root event id of the thread being summarised. */
   rootEventId: string;
   /** Summary text. */
@@ -180,9 +180,7 @@ function imetaTagFor(entry: ImetaEntry): string[] {
  * its in-process callers; we deliberately emit `subject` so the relay's
  * subscription queries stay useful. PR #4 will reconcile.
  */
-export async function buildMessage(
-  opts: BuildMessageOptions,
-): Promise<NostrEvent> {
+export async function buildMessage(opts: BuildMessageOptions): Promise<NostrEvent> {
   const tags: string[][] = [
     ["client", "buzz-mcp"],
     ["t", "euc"],
@@ -222,9 +220,7 @@ export async function buildMessage(
  *   - `["e", <replyTo>, "", "reply"]` (if `replyTo` provided)
  *   - `["a", <community>]` (always)
  */
-export async function buildForumPost(
-  opts: BuildForumPostOptions,
-): Promise<NostrEvent> {
+export async function buildForumPost(opts: BuildForumPostOptions): Promise<NostrEvent> {
   const tags: string[][] = [
     ["client", "buzz-mcp"],
     ["t", "euc"],
@@ -254,9 +250,7 @@ export async function buildForumPost(
  * validated) but not emitted as a tag — the prompt scope is `["e", id, "",
  * "edit"]` only.
  */
-export async function buildEdit(
-  opts: BuildEditOptions,
-): Promise<NostrEvent> {
+export async function buildEdit(opts: BuildEditOptions): Promise<NostrEvent> {
   const tags: string[][] = [
     ["client", "buzz-mcp"],
     ["t", "euc"],
@@ -281,9 +275,7 @@ export async function buildEdit(
  * NIP-25 readers. No `k` tag — the Rust SDK doesn't emit one and the prompt
  * says to omit it when the Rust source does.
  */
-export async function buildReaction(
-  opts: BuildReactionOptions,
-): Promise<NostrEvent> {
+export async function buildReaction(opts: BuildReactionOptions): Promise<NostrEvent> {
   const tags: string[][] = [
     ["client", "buzz-mcp"],
     ["t", "euc"],
@@ -315,9 +307,7 @@ export async function buildReaction(
  * relay-allocated channel UUID; the relay should allocate one on ingest. If
  * the relay rejects this shape we'll switch to a client-generated v4 UUID.
  */
-export async function buildCreateChannel(
-  opts: BuildCreateChannelOptions,
-): Promise<NostrEvent> {
+export async function buildCreateChannel(opts: BuildCreateChannelOptions): Promise<NostrEvent> {
   const tags: string[][] = [
     ["client", "buzz-mcp"],
     ["t", "euc"],
@@ -356,9 +346,7 @@ export async function buildCreateChannel(
  * must be `sleep 1` apart. The MCP tool surfaces this in its description; the
  * helper itself doesn't enforce it (and shouldn't — there's no relay call here).
  */
-export async function buildAddMember(
-  opts: BuildAddMemberOptions,
-): Promise<NostrEvent> {
+export async function buildAddMember(opts: BuildAddMemberOptions): Promise<NostrEvent> {
   const tags: string[][] = [
     ["client", "buzz-mcp"],
     ["t", "euc"],
@@ -395,9 +383,7 @@ export async function buildAddMember(
  * lands in `CorePrt-relay/crates/buzz-sdk/src/builders.rs`. The kind (43001)
  * is canonical; only the tag shape may need to change.
  */
-export async function buildJob(
-  opts: BuildJobOptions,
-): Promise<NostrEvent> {
+export async function buildJob(opts: BuildJobOptions): Promise<NostrEvent> {
   const tags: string[][] = [
     ["client", "buzz-mcp"],
     ["t", "euc"],
@@ -471,9 +457,7 @@ export async function buildWorkflowApproval(
  *   - `["t", "euc"]`
  *   - `["e", <rootEventId>, "", "root"]`
  */
-export async function buildThreadSummary(
-  opts: BuildThreadSummaryOptions,
-): Promise<NostrEvent> {
+export async function buildThreadSummary(opts: BuildThreadSummaryOptions): Promise<NostrEvent> {
   const tags: string[][] = [
     ["client", "buzz-mcp"],
     ["t", "euc"],

@@ -9,23 +9,14 @@
  * intentionally unauthenticated). Write tools use `signedFetch` exactly like
  * the first-tool.
  */
-import { z } from "zod";
-import { npubEncode } from "nostr-tools/nip19";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import {
-  getPublicKey,
-  type NsecOrHex,
-  type NostrEvent,
-} from "../relay/signer.js";
-import {
-  buildAddMember,
-  buildCreateChannel,
-} from "../relay/event-builder.js";
-import {
-  formatRelayError,
-  signedFetchWithTimeout,
-} from "../util/relay-call.js";
+import { npubEncode } from "nostr-tools/nip19";
+import { z } from "zod";
+import type { SignedFetchResult } from "../relay/client.js";
+import { buildAddMember, buildCreateChannel } from "../relay/event-builder.js";
+import { getPublicKey, type NostrEvent, type NsecOrHex } from "../relay/signer.js";
+import { formatRelayError, signedFetchWithTimeout } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
 
@@ -61,11 +52,7 @@ async function probeRelayInfo(
  * Register `buzz_identity`. No inputs. Returns the relay's NIP-11 info doc
  * (probed) plus the operator pubkey + npub derived from `BUZZ_PRIVATE_KEY`.
  */
-export function registerIdentityTool(
-  server: McpServer,
-  secret: NsecOrHex,
-  relayUrl: string,
-): void {
+export function registerIdentityTool(server: McpServer, secret: NsecOrHex, relayUrl: string): void {
   server.tool(
     "buzz_identity",
     "Return the relay's NIP-11 info document and the operator's Nostr pubkey. " +
@@ -122,7 +109,7 @@ export function registerListChannelsTool(
         limit: 100,
       });
 
-      let resp;
+      let resp: SignedFetchResult;
       try {
         resp = await signedFetchWithTimeout(secret, {
           method: "POST",
@@ -131,9 +118,7 @@ export function registerListChannelsTool(
           headers: { "content-type": "application/json" },
         });
       } catch (err) {
-        throw new Error(
-          formatRelayError(relayUrl, { cause: err as Error }),
-        );
+        throw new Error(formatRelayError(relayUrl, { cause: err as Error }));
       }
 
       if (resp.status < 200 || resp.status >= 300) {
@@ -207,15 +192,11 @@ export function registerCreateChannelTool(
     "Create a new channel (kind:9007 NIP-29 create_channel). Returns the event id " +
       "and the channel name/visibility. The relay allocates the channel UUID.",
     {
-      name: z
-        .string()
-        .min(1)
-        .max(64)
-        .describe("Channel name (NIP-29). Required."),
+      name: z.string().min(1).max(64).describe("Channel name (NIP-29). Required."),
       visibility: z
         .enum(["public", "private"])
         .optional()
-        .describe("Channel visibility (default \"public\")."),
+        .describe('Channel visibility (default "public").'),
       description: z
         .string()
         .max(2048)
@@ -230,7 +211,7 @@ export function registerCreateChannelTool(
         description: args.description,
       });
 
-      let resp;
+      let resp: SignedFetchResult;
       try {
         resp = await signedFetchWithTimeout(secret, {
           method: "POST",
@@ -239,9 +220,7 @@ export function registerCreateChannelTool(
           headers: { "content-type": "application/json" },
         });
       } catch (err) {
-        throw new Error(
-          formatRelayError(relayUrl, { cause: err as Error }),
-        );
+        throw new Error(formatRelayError(relayUrl, { cause: err as Error }));
       }
 
       if (resp.status < 200 || resp.status >= 300) {
@@ -301,10 +280,7 @@ export function registerAddMemberTool(
         .string()
         .regex(/^[0-9a-f]{64}$/, "must be 64 lowercase hex characters")
         .describe("Pubkey (hex) of the member to add. Required."),
-      role: z
-        .enum(["admin", "member"])
-        .optional()
-        .describe("Member role (default \"member\")."),
+      role: z.enum(["admin", "member"]).optional().describe('Member role (default "member").'),
     },
     async (args) => {
       const event = await buildAddMember({
@@ -313,7 +289,7 @@ export function registerAddMemberTool(
         role: args.role,
       });
 
-      let resp;
+      let resp: SignedFetchResult;
       try {
         resp = await signedFetchWithTimeout(secret, {
           method: "POST",
@@ -322,9 +298,7 @@ export function registerAddMemberTool(
           headers: { "content-type": "application/json" },
         });
       } catch (err) {
-        throw new Error(
-          formatRelayError(relayUrl, { cause: err as Error }),
-        );
+        throw new Error(formatRelayError(relayUrl, { cause: err as Error }));
       }
 
       if (resp.status < 200 || resp.status >= 300) {

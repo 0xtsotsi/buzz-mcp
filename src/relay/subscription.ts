@@ -18,7 +18,7 @@
  *   - NIP-01 (basic protocol): https://github.com/nostr-protocol/nips/blob/master/01.md
  *   - NIP-42 (auth):          https://github.com/nostr-protocol/nips/blob/master/42.md
  */
-import { signEvent, type NsecOrHex } from "./signer.js";
+import { type NsecOrHex, signEvent } from "./signer.js";
 
 // ─── Public types ──────────────────────────────────────────────────────────
 
@@ -93,11 +93,7 @@ export class SubscriptionManager {
   #ready: boolean = false;
   #subs: Map<string, SubState> = new Map();
 
-  constructor(
-    secret: NsecOrHex,
-    relayUrl: string,
-    opts: SubscriptionManagerOptions = {},
-  ) {
+  constructor(secret: NsecOrHex, relayUrl: string, opts: SubscriptionManagerOptions = {}) {
     this.#secret = secret;
     this.#relayUrl = relayUrl.replace(/\/$/, "");
     this.#maxBufferSize = opts.maxBufferSize ?? 1000;
@@ -123,7 +119,7 @@ export class SubscriptionManager {
       } catch (err) {
         lastErr = err;
         if (attempt < 2) {
-          await sleep(baseMs * Math.pow(2, attempt));
+          await sleep(baseMs * 2 ** attempt);
         }
       }
     }
@@ -219,10 +215,7 @@ export class SubscriptionManager {
     return new Promise<void>((resolve, reject) => {
       const ws = new this.#wsImpl(this.#relayUrl);
       let settled = false;
-      const finish = (
-        fn: () => void,
-        timer: ReturnType<typeof setTimeout> | null,
-      ): void => {
+      const finish = (fn: () => void, timer: ReturnType<typeof setTimeout> | null): void => {
         if (settled) return;
         settled = true;
         if (timer !== null) clearTimeout(timer);
@@ -234,11 +227,7 @@ export class SubscriptionManager {
         const msg = parseFrame(ev.data);
         if (msg === null) return;
         const tag = msg[0];
-        if (
-          tag === "AUTH" &&
-          typeof msg[1] === "string" &&
-          authTimer !== null
-        ) {
+        if (tag === "AUTH" && typeof msg[1] === "string" && authTimer !== null) {
           // Got the challenge — respond with a signed kind:22242.
           const challenge = msg[1];
           try {
@@ -253,10 +242,7 @@ export class SubscriptionManager {
             ws.send(JSON.stringify(["AUTH", authEvent]));
             finish(resolve, authTimer);
           } catch (err) {
-            finish(
-              () => reject(err instanceof Error ? err : new Error(String(err))),
-              authTimer,
-            );
+            finish(() => reject(err instanceof Error ? err : new Error(String(err))), authTimer);
           }
           return;
         }
@@ -273,8 +259,7 @@ export class SubscriptionManager {
       };
 
       ws.onerror = (ev: Event): void => {
-        const msg =
-          (ev as ErrorEvent).message ?? `ws error (no message)`;
+        const msg = (ev as ErrorEvent).message ?? `ws error (no message)`;
         finish(() => reject(new Error(`SubscriptionManager: ${msg}`)), authTimer);
       };
 
@@ -282,9 +267,7 @@ export class SubscriptionManager {
         finish(
           () =>
             reject(
-              new Error(
-                `SubscriptionManager: ws closed (code=${ev.code} reason="${ev.reason}")`,
-              ),
+              new Error(`SubscriptionManager: ws closed (code=${ev.code} reason="${ev.reason}")`),
             ),
           authTimer,
         );
@@ -359,9 +342,7 @@ function parseFrame(data: unknown): unknown[] | null {
   } else if (data instanceof ArrayBuffer) {
     text = new TextDecoder().decode(new Uint8Array(data));
   } else if (ArrayBuffer.isView(data)) {
-    text = new TextDecoder().decode(
-      new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
-    );
+    text = new TextDecoder().decode(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
   } else {
     return null;
   }
