@@ -21,6 +21,7 @@ import type {
   SubscriptionFilter,
   SubscriptionManager,
 } from "../relay/subscription.js";
+import type { CfAccess } from "../util/relay-call.js";
 
 /** Per-call timeout, milliseconds. The relay should ack in <2s; 5s is generous. */
 const TOOL_TIMEOUT_MS = 5_000;
@@ -203,7 +204,11 @@ function textResult(value: unknown): { content: [{ type: "text"; text: string }]
  * on the initial WS open + NIP-42 auth; the 5s timeout catches the worst
  * case (relay is unreachable) and surfaces it as a tool error.
  */
-export function registerSubscribeTool(server: McpServer, subs: SubscriptionManager): void {
+export function registerSubscribeTool(
+  server: McpServer,
+  subs: SubscriptionManager,
+  _cfAccess?: CfAccess,
+): void {
   server.tool(
     "buzz_subscribe",
     "Open a subscription on the relay's WebSocket. Returns a `sub_id` you " +
@@ -223,7 +228,11 @@ export function registerSubscribeTool(server: McpServer, subs: SubscriptionManag
  * Register `buzz_unsubscribe`. Sends `["CLOSE", subId]` and removes the sub
  * from the manager. No-op for an unknown sub_id (returns `closed: false`).
  */
-export function registerUnsubscribeTool(server: McpServer, subs: SubscriptionManager): void {
+export function registerUnsubscribeTool(
+  server: McpServer,
+  subs: SubscriptionManager,
+  _cfAccess?: CfAccess,
+): void {
   server.tool(
     "buzz_unsubscribe",
     "Close a subscription opened by buzz_subscribe. Sends [" +
@@ -242,7 +251,11 @@ export function registerUnsubscribeTool(server: McpServer, subs: SubscriptionMan
  * Register `buzz_poll`. Drains up to `max` events from the named sub's FIFO
  * buffer in declaration order. Returns `{sub_id, events, remaining}`.
  */
-export function registerPollTool(server: McpServer, subs: SubscriptionManager): void {
+export function registerPollTool(
+  server: McpServer,
+  subs: SubscriptionManager,
+  _cfAccess?: CfAccess,
+): void {
   server.tool(
     "buzz_poll",
     "Drain buffered events from a subscription. Returns up to `max` events " +

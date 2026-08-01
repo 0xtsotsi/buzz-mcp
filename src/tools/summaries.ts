@@ -12,6 +12,7 @@ import type { SignedFetchResult } from "../relay/client.js";
 import { signedFetch } from "../relay/client.js";
 import { buildThreadSummary } from "../relay/event-builder.js";
 import type { NsecOrHex } from "../relay/signer.js";
+import type { CfAccess } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
 const TOOL_TIMEOUT_MS = 5_000;
@@ -42,6 +43,7 @@ export function registerPostThreadSummaryTool(
   server: McpServer,
   secret: NsecOrHex,
   relayUrl: string,
+  cfAccess?: CfAccess,
 ): void {
   server.tool(
     "buzz_post_thread_summary",
@@ -73,12 +75,17 @@ export function registerPostThreadSummaryTool(
 
       let resp: SignedFetchResult;
       try {
+        const headers: Record<string, string> = { "content-type": "application/json" };
+        if (cfAccess !== undefined) {
+          headers["CF-Access-Client-Id"] = cfAccess.clientId;
+          headers["CF-Access-Client-Secret"] = cfAccess.clientSecret;
+        }
         resp = await withTimeout(
           signedFetch(secret, {
             method: "POST",
             url: `${relayUrl.replace(/\/$/, "")}/events`,
             body: JSON.stringify(event),
-            headers: { "content-type": "application/json" },
+            headers,
           }),
           TOOL_TIMEOUT_MS,
           "post thread summary",

@@ -18,7 +18,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { buildEdit, buildMessage, buildReaction, type ImetaEntry } from "../relay/event-builder.js";
 import type { NsecOrHex } from "../relay/signer.js";
-import { signedFetchWithTimeout } from "../util/relay-call.js";
+import { type CfAccess, signedFetchWithTimeout } from "../util/relay-call.js";
 
 /** Hard cap on a single message body, in bytes (UTF-8). */
 const MAX_CONTENT_BYTES = 32 * 1024;
@@ -52,6 +52,7 @@ export function registerPostMessageTool(
   server: McpServer,
   secret: NsecOrHex,
   relayUrl: string,
+  cfAccess?: CfAccess,
 ): void {
   // Note: AbortController-based timeout is wired around the signedFetch call
   // below; signedFetch itself does not accept a signal, so we race it.
@@ -116,6 +117,7 @@ export function registerPostMessageTool(
           headers: { "content-type": "application/json" },
         },
         TOOL_TIMEOUT_MS,
+        cfAccess,
       ).catch((err: Error) => {
         throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
       });
@@ -187,6 +189,7 @@ export function registerEditMessageTool(
   server: McpServer,
   secret: NsecOrHex,
   relayUrl: string,
+  cfAccess?: CfAccess,
 ): void {
   server.tool(
     "buzz_edit_message",
@@ -229,6 +232,7 @@ export function registerEditMessageTool(
           headers: { "content-type": "application/json" },
         },
         TOOL_TIMEOUT_MS,
+        cfAccess,
       ).catch((err: Error) => {
         throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
       });
@@ -265,7 +269,12 @@ export function registerEditMessageTool(
  * `/events`. The emoji is held both as the event `content` and in the
  * `["content", emoji]` tag for legacy compatibility.
  */
-export function registerReactTool(server: McpServer, secret: NsecOrHex, relayUrl: string): void {
+export function registerReactTool(
+  server: McpServer,
+  secret: NsecOrHex,
+  relayUrl: string,
+  cfAccess?: CfAccess,
+): void {
   server.tool(
     "buzz_react",
     "Post a reaction (kind:7 NIP-25). Returns the event id, the target event " +
@@ -293,6 +302,7 @@ export function registerReactTool(server: McpServer, secret: NsecOrHex, relayUrl
           headers: { "content-type": "application/json" },
         },
         TOOL_TIMEOUT_MS,
+        cfAccess,
       ).catch((err: Error) => {
         throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
       });

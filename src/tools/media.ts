@@ -27,7 +27,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { SignedFetchResult } from "../relay/client.js";
 import type { NsecOrHex } from "../relay/signer.js";
-import { signedFetchWithTimeout } from "../util/relay-call.js";
+import { type CfAccess, signedFetchWithTimeout } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
 const TOOL_TIMEOUT_MS = 30_000; // uploads can be slow; 30s ceiling
@@ -74,6 +74,7 @@ export function registerUploadMediaTool(
   server: McpServer,
   secret: NsecOrHex,
   relayUrl: string,
+  cfAccess?: CfAccess,
 ): void {
   server.tool(
     "buzz_upload_media",
@@ -158,6 +159,7 @@ export function registerUploadMediaTool(
               headers: { "content-type": args.mime },
             },
             TOOL_TIMEOUT_MS,
+            cfAccess,
           );
         } catch (err) {
           throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);

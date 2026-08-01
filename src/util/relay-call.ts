@@ -24,11 +24,29 @@ export const DEFAULT_TOOL_TIMEOUT_MS = 5_000;
  * 5s ceiling is generous. A genuine 5s response almost always means
  * something is wrong upstream; surfacing the timeout as an error is more
  * useful than letting the tool hang.
+ *
+ * If `cfAccess` is provided, `CF-Access-Client-Id` and `CF-Access-Client-Secret`
+ * are merged into the request headers (alongside the NIP-98 `Authorization`
+ * that `signedFetch` always sets). Explicit `opts.headers` win over `cfAccess`.
+ * Cloudflare Access sits in front of the relay at `https://coreprt.webrnds.com`,
+ * so production deploys must pass these or every request 401's before the
+ * NIP-98 layer is reached. The credentials are read once at startup and
+ * never appear in tool-result payloads or logs.
  */
+/**
+ * Cloudflare Access service-token credentials. Forwarded as the
+ * `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers on every
+ * signedFetch call when present. See `signedFetchWithTimeout` for full
+ * details. The secret value itself never appears in tool-result payloads
+ * or logs.
+ */
+export type CfAccess = { clientId: string; clientSecret: string };
+
 export async function signedFetchWithTimeout(
   secret: Parameters<typeof signedFetch>[0],
   opts: SignedFetchOptions,
   timeoutMs: number = DEFAULT_TOOL_TIMEOUT_MS,
+  cfAccess?: CfAccess,
 ): Promise<Awaited<ReturnType<typeof signedFetch>>> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
@@ -41,7 +59,18 @@ export async function signedFetchWithTimeout(
     }
   }
   try {
-    return await signedFetch(secret, { ...opts, signal: ac.signal });
+    const mergedOpts: SignedFetchOptions =
+      cfAccess !== undefined
+        ? {
+            ...opts,
+            headers: {
+              ...opts.headers,
+              "CF-Access-Client-Id": cfAccess.clientId,
+              "CF-Access-Client-Secret": cfAccess.clientSecret,
+            },
+          }
+        : opts;
+    return await signedFetch(secret, { ...mergedOpts, signal: ac.signal });
   } finally {
     clearTimeout(timer);
   }
