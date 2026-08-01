@@ -115,6 +115,7 @@ export function registerUploadMediaTool(
       if (args.data !== undefined) {
         bytes = base64ToBytes(args.data);
       } else {
+        // biome-ignore lint/style/noNonNullAssertion: Zod refine guarantees exactly one of data/filePath is set
         const absPath = ensureInsideCwd(args.filePath!);
         // Check the size BEFORE reading so a 1 GiB file doesn't blow up the
         // process. 1 MiB cap matches MAX_BYTES.
