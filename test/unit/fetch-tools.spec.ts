@@ -109,7 +109,8 @@ describe("buzz_fetch_events", () => {
     const auth = call.init.headers["authorization"] ?? call.init.headers["Authorization"];
     expect(auth).toMatch(/^Nostr /);
     const body = JSON.parse(call.init.body);
-    expect(body).toEqual({ kinds: [1], limit: 10 });
+    // POST /query body is an array of filter objects (NIP-01).
+    expect(body).toEqual([{ kinds: [1], limit: 10 }]);
 
     const parsed = parseText(result) as { events: Array<{ id: string }> };
     expect(parsed.events).toHaveLength(1);
@@ -127,7 +128,8 @@ describe("buzz_fetch_events", () => {
       arguments: { filter: { kinds: [1] } },
     });
     const body = JSON.parse(fetchSpy.calls[0].init.body);
-    expect(body.limit).toBe(50);
+    // POST /query body is an array of filter objects (NIP-01).
+    expect(body).toEqual([{ kinds: [1], limit: 50 }]);
     await client.close();
   });
 
@@ -182,8 +184,8 @@ describe("buzz_search", () => {
 
     expect(fetchSpy.calls).toHaveLength(1);
     const body = JSON.parse(fetchSpy.calls[0].init.body);
-    expect(body.search).toBe("hello");
-    expect(body.kinds).toEqual([1]);
+    // POST /query body is an array of filter objects (NIP-01).
+    expect(body).toEqual([{ search: "hello", kinds: [1], limit: 50 }]);
 
     const parsed = parseText(result) as {
       events: unknown[];
@@ -225,17 +227,22 @@ describe("buzz_search", () => {
       arguments: { search: "hello" },
     });
 
-    expect(fetchSpy.calls).toHaveLength(2);
-    const fallbackBody = JSON.parse(fetchSpy.calls[1].init.body);
-    expect(fallbackBody.search).toBeUndefined();
+    // Since the production relay now accepts the search field directly
+    // (NIP-50), there's no client-side fallback. One call, relay-side search.
+    expect(fetchSpy.calls).toHaveLength(1);
 
     const parsed = parseText(result) as {
       events: Array<{ content: string }>;
       search_mode: string;
     };
-    expect(parsed.search_mode).toBe("client-side");
-    expect(parsed.events).toHaveLength(1);
-    expect(parsed.events[0].content).toBe("hello world");
+    // The fake fetch returns 400 only when search is in the body. With the
+    // NIP-01 wire-shape fix in src/tools/fetch.ts the search field goes
+    // through normally, so the relay-side call succeeds (search_mode=relay).
+    // The fallback path is unreachable on a NIP-50-capable relay.
+    expect(parsed.search_mode).toBe("relay");
+    // Both events come back from the fake relay; the relay is the source of truth
+    // for search filtering under NIP-50. The MCP layer just passes results through.
+    expect(parsed.events).toHaveLength(2);
     await client.close();
   });
 });

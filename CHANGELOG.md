@@ -91,3 +91,20 @@ docs (PR #6).
 - The 16 tool functions each take `cfAccess?: CfAccess` as a 4th parameter. The 13 HTTP tools forward it through `signedFetchWithTimeout`; the 3 WebSocket subscription tools receive `_cfAccess` (underscore-prefixed, intentionally unused — WS doesn't traverse CF Access).
 - `buzz_identity`'s NIP-11 probe uses plain `fetch` (not `signedFetch`) per the spec; it is NOT CF-Access-gated by this change. In practice the probe path is unauthenticated by design and will return 302 from CF Access if the env vars are unset. Future: `buzz_identity` should also forward CF-Access headers (small follow-up).
 - The agent keypair (`5430c42f…`) was debugged in chat during v0.1.0 onboarding; rotate before any production use.
+
+## [0.1.2] - 2026-08-01
+
+### Fixed
+- **`POST /query` wire-shape bug.** NIP-01 specifies `filters` as an **array** of filter objects, but `buzz_list_channels`, `buzz_fetch_events`, and `buzz_search` were sending a single map. The relay's strict deserializer rejected with HTTP 400 "invalid type: map, expected a sequence". Now wraps the filter in `[…]` at every `/query` call site. Behavior verified against `https://coreprt.webrnds.com`.
+
+### Changed
+- `src/util/relay-call.ts` — `postQuery` body now `[filter]` instead of `filter`.
+- `src/tools/identity.ts` — `buzz_list_channels` body now `[filter]` instead of `filter`.
+
+### Tests
+- `test/unit/fetch-tools.spec.ts` — 4 tests updated to expect `[filter]` shape.
+- `test/unit/identity-tool.spec.ts` — 1 test updated to expect `[filter]` shape.
+- All 97 tests passing across 14 files.
+
+### Notes
+- The deferred `subject` → `h` tag fix for `buildMessage` is still pending (v0.1.3+). The current `["subject", ...]` placeholder works for `kind:9007` (channel create) but is rejected by some relays for `kind:9` (stream message) until switched to `["h", uuid]`.

@@ -85,7 +85,11 @@ async function postQuery(
     {
       method: "POST",
       url: `${relayUrl.replace(/\/$/, "")}/query`,
-      body: JSON.stringify(filter),
+      // NIP-01: filters is an array of filter objects. Wrap the single filter
+      // we accept at the call site so the relay's strict deserializer sees a
+      // sequence, not a map. (Earlier versions sent a single map and got
+      // HTTP 400 "invalid type: map, expected a sequence".)
+      body: JSON.stringify([filter]),
       headers: { "content-type": "application/json" },
     },
     TOOL_TIMEOUT_MS,
