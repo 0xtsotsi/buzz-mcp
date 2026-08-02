@@ -3,7 +3,45 @@
 All notable changes to `@buzz/mcp` are documented in this file. The format
 loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased] — Phase 3 (multi-relay plan)
+## [Unreleased] — Phase 4 (multi-relay plan)
+
+Adds subscription multiplexing. The existing `SubscriptionManager` (single
+WebSocket) is now wrapped in a `MultiRelaySubscriptionManager` that fans
+out a single `REQ` across every configured relay and dedupes events by
+`id` on poll.
+
+### Added
+
+- **`src/relay/multi-subscription.ts` — `MultiRelaySubscriptionManager`**:
+  - `subscribe(filter, opts)` issues a `REQ` on every relay in parallel.
+  - `poll(subId, max)` drains events from every per-relay sub, dedupes
+    by `id` ("first seen wins"), and returns the merged set with
+    per-relay origin stripped.
+  - `remaining(subId)` sums the per-relay queues.
+  - `unsubscribe(subId)` sends `CLOSE` on every per-relay sub.
+  - `close()` shuts down every per-relay WS.
+  - Per-call `relays: [...]` overrides the configured relay list.
+- **9 new tests** in `test/unit/multi-subscription.spec.ts`. All existing
+  tests still pass; 203 tests total (was 194).
+
+### Changed
+
+- `createServer()` now constructs a `MultiRelaySubscriptionManager` and
+  threads it through the three subscription tools. The per-relay
+  `SubscriptionManager` instances are created on demand by a
+  `createManager` callback.
+- `buzz_subscribe` gains a `relays: string[]` per-call override.
+
+### Test summary
+
+`Test Files  23 passed (23)`
+`Tests  203 passed (203)` (9 new in Phase 4)
+
+Bumps version to 0.1.6.
+
+## [0.1.5] — 2026-08-02 (Phase 3)
+
+Multi-relay core. PR #13.
 
 Adds the `RelayPool` (multi-relay fan-out for signed writes) and rewrites
 the 9 write tools to use it. The tool responses gain a `posts: [...]`

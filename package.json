@@ -1,6 +1,6 @@
 {
   "name": "@buzz/mcp",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "TypeScript MCP server for the CorePrt Nostr relay",
   "type": "module",
   "main": "dist/index.js",

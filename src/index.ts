@@ -18,6 +18,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type BuzzConfig, parseEnv } from "./config/schema.js";
+import { MultiRelaySubscriptionManager } from "./relay/multi-subscription.js";
 import { RelayPool } from "./relay/pool.js";
 import type { NsecOrHex } from "./relay/signer.js";
 import { StatsStore } from "./relay/stats.js";
@@ -47,7 +48,7 @@ import { createLogger, setLogger } from "./util/log.js";
 import type { CfAccess } from "./util/relay-call.js";
 
 const SERVER_NAME = "@buzz/mcp";
-const SERVER_VERSION = "0.1.5";
+const SERVER_VERSION = "0.1.6";
 
 /**
  * All 16 tool names registered by this build, in alphabetical order. Kept
@@ -172,7 +173,14 @@ export function createServer(): McpServer {
     channelCacheTtlMs: config.channelCacheTtlMs,
   });
 
-  const subs = new SubscriptionManager(secret, relayUrl);
+  const subs = new MultiRelaySubscriptionManager({
+    relayUrls: config.relays,
+    createManager: (relay) => {
+      // The SubscriptionManager accepts the secret at construction time.
+      // We pass the same NsecOrHex + cfAccess so NIP-42 AUTH works.
+      return new SubscriptionManager(secret, relay);
+    },
+  });
 
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
