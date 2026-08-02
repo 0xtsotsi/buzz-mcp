@@ -65,7 +65,7 @@ function payloadHash(body: string | Uint8Array | undefined): string {
   return bytesToHex(sha256(bytes));
 }
 
-function buildAuthHeader(secret: NsecOrHex, opts: SignedFetchOptions): string {
+export function buildAuthHeader(secret: NsecOrHex, opts: SignedFetchOptions): string {
   const event: NostrEvent = signEvent(secret, {
     kind: 27235,
     tags: [

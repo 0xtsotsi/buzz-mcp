@@ -8,16 +8,16 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { SignedFetchResult } from "../relay/client.js";
 import { buildJob, buildWorkflowApproval } from "../relay/event-builder.js";
+import type { RelayPool } from "../relay/pool.js";
 import type { NsecOrHex } from "../relay/signer.js";
-import type { SignedFetchWithTimeoutExtras } from "../util/relay-call.js";
-import { type CfAccess, signedFetchWithTimeout } from "../util/relay-call.js";
+import type { CfAccess, SignedFetchWithTimeoutExtras } from "../util/relay-call.js";
+import { poolWrite, poolWriteToMcpContent } from "./pool-write.js";
 
-const RELAY_BODY_PRINT_LIMIT = 1_000;
+const _RELAY_BODY_PRINT_LIMIT = 1_000;
 
 /** Per-call timeout (default). 5s is generous; the relay acks in <1s. */
-const TOOL_TIMEOUT_MS = 5_000;
+const _TOOL_TIMEOUT_MS = 5_000;
 
 /**
  * Register `buzz_create_job`. POSTs a kind:43001 event to `/events`.
@@ -30,9 +30,10 @@ const TOOL_TIMEOUT_MS = 5_000;
 export function registerCreateJobTool(
   server: McpServer,
   secret: NsecOrHex,
-  relayUrl: string,
-  cfAccess?: CfAccess,
-  extras?: SignedFetchWithTimeoutExtras,
+  _relayUrl: string,
+  _cfAccess?: CfAccess,
+  _extras?: SignedFetchWithTimeoutExtras,
+  pool?: RelayPool,
 ): void {
   server.tool(
     "buzz_create_job",
@@ -48,6 +49,20 @@ export function registerCreateJobTool(
         .describe("Job description (event content). Required."),
       budget: z.number().int().nonnegative().optional().describe("Optional budget (numeric)."),
       dueAt: z.iso.datetime().optional().describe("Optional due-at (ISO-8601 timestamp string)."),
+      relays: z
+        .array(z.string().url())
+        .optional()
+        .describe(
+          "Optional per-call relay list (overrides the pool default). " +
+            "Use this to force a write to a specific relay.",
+        ),
+      allowFanout: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true (default), the write is fanned out to all configured relays. " +
+            "Set to false to write only to the default relay.",
+        ),
     },
     async (args) => {
       const event = await buildJob({
@@ -58,53 +73,20 @@ export function registerCreateJobTool(
         dueAt: args.dueAt,
       });
 
-      let resp: SignedFetchResult;
-      try {
-        resp = await signedFetchWithTimeout(
-          secret,
-          {
-            method: "POST",
-            url: `${relayUrl.replace(/\/$/, "")}/events`,
-            body: JSON.stringify(event),
-            headers: { "content-type": "application/json" },
+      const { mcpBody, isError } = await poolWrite(pool, event, {
+        mode: "mutate",
+        preview: "buzz_create_job",
+        tool: "buzz_create_job",
+        responseExtras: {
+          job: {
+            title: args.title,
+            description: args.description,
+            budget: args.budget ?? null,
+            dueAt: args.dueAt ?? null,
           },
-          TOOL_TIMEOUT_MS,
-
-          cfAccess,
-
-          { stats: extras?.stats, tool: "buzz_create_job" },
-        );
-      } catch (err) {
-        throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
-      }
-
-      if (resp.status < 200 || resp.status >= 300) {
-        throw new Error(
-          `relay rejected event: HTTP ${resp.status} — ${resp.bodyText.slice(0, RELAY_BODY_PRINT_LIMIT)}`,
-        );
-      }
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                event_id: event.id,
-                accepted: true,
-                job: {
-                  title: args.title,
-                  description: args.description,
-                  budget: args.budget ?? null,
-                  dueAt: args.dueAt ?? null,
-                },
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
+        },
+      });
+      return poolWriteToMcpContent(mcpBody, isError);
     },
   );
 }
@@ -124,9 +106,10 @@ export function registerCreateJobTool(
 export function registerApproveWorkflowTool(
   server: McpServer,
   secret: NsecOrHex,
-  relayUrl: string,
-  cfAccess?: CfAccess,
-  extras?: SignedFetchWithTimeoutExtras,
+  _relayUrl: string,
+  _cfAccess?: CfAccess,
+  _extras?: SignedFetchWithTimeoutExtras,
+  pool?: RelayPool,
 ): void {
   server.tool(
     "buzz_approve_workflow",
@@ -146,6 +129,20 @@ export function registerApproveWorkflowTool(
         .max(2048)
         .optional()
         .describe("Optional human-readable note (event content)."),
+      relays: z
+        .array(z.string().url())
+        .optional()
+        .describe(
+          "Optional per-call relay list (overrides the pool default). " +
+            "Use this to force a write to a specific relay.",
+        ),
+      allowFanout: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true (default), the write is fanned out to all configured relays. " +
+            "Set to false to write only to the default relay.",
+        ),
     },
     async (args) => {
       const event = await buildWorkflowApproval({
@@ -155,52 +152,19 @@ export function registerApproveWorkflowTool(
         comment: args.comment,
       });
 
-      let resp: SignedFetchResult;
-      try {
-        resp = await signedFetchWithTimeout(
-          secret,
-          {
-            method: "POST",
-            url: `${relayUrl.replace(/\/$/, "")}/events`,
-            body: JSON.stringify(event),
-            headers: { "content-type": "application/json" },
+      const { mcpBody, isError } = await poolWrite(pool, event, {
+        mode: "mutate",
+        preview: "buzz_approve_workflow",
+        tool: "buzz_approve_workflow",
+        responseExtras: {
+          workflow: {
+            id: args.workflowId,
+            decision: args.decision ?? "approve",
+            comment: args.comment ?? null,
           },
-          TOOL_TIMEOUT_MS,
-
-          cfAccess,
-
-          { stats: extras?.stats, tool: "buzz_approve_workflow" },
-        );
-      } catch (err) {
-        throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
-      }
-
-      if (resp.status < 200 || resp.status >= 300) {
-        throw new Error(
-          `relay rejected event: HTTP ${resp.status} — ${resp.bodyText.slice(0, RELAY_BODY_PRINT_LIMIT)}`,
-        );
-      }
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                event_id: event.id,
-                accepted: true,
-                workflow: {
-                  id: args.workflowId,
-                  decision: args.decision,
-                  comment: args.comment ?? null,
-                },
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
+        },
+      });
+      return poolWriteToMcpContent(mcpBody, isError);
     },
   );
 }

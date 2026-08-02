@@ -7,6 +7,23 @@
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { RelayPool } from "../../src/relay/pool.js";
+import { StatsStore } from "../../src/relay/stats.js";
+import { createLogger } from "../../src/util/log.js";
+
+function makePool(secret: string, relay: string): RelayPool {
+  const stats = new StatsStore(createLogger({ level: "error" }));
+  return new RelayPool({
+    relays: [relay],
+    defaultRelay: relay,
+    relayHosts: {},
+    secret: secret as never,
+    stats,
+    channelCacheTtlMs: 5 * 60 * 1000,
+    fetchImpl: globalThis.fetch as typeof fetch,
+  });
+}
+
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -63,7 +80,7 @@ async function makeServerAndClient(register: RegisterFn) {
     { name: "test", version: "0.0.0" },
     { capabilities: {}, instructions: "test" },
   );
-  register(server, SECRET, RELAY);
+  register(server, SECRET, RELAY, undefined, undefined, undefined, makePool(SECRET, RELAY));
   const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await Promise.all([client.connect(ct), server.connect(st)]);
@@ -311,7 +328,7 @@ describe("buzz_add_member", () => {
   it("POSTs a kind:9000 event with p + role tags", async () => {
     const member = "9".repeat(64);
     fetchSpy = makeFetchSpy(
-      async () => new Response(JSON.stringify({ ok: true }), { status: 202 }),
+      async () => new Response(JSON.stringify({ ok: true, id: "a".repeat(64) }), { status: 202 }),
     );
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
@@ -341,7 +358,7 @@ describe("buzz_add_member", () => {
   it("defaults role to member when omitted", async () => {
     const member = "8".repeat(64);
     fetchSpy = makeFetchSpy(
-      async () => new Response(JSON.stringify({ ok: true }), { status: 202 }),
+      async () => new Response(JSON.stringify({ ok: true, id: "a".repeat(64) }), { status: 202 }),
     );
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 

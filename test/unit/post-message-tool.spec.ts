@@ -4,6 +4,23 @@
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { RelayPool } from "../../src/relay/pool.js";
+import { StatsStore } from "../../src/relay/stats.js";
+import { createLogger } from "../../src/util/log.js";
+
+function makePool(secret: string, relay: string): RelayPool {
+  const stats = new StatsStore(createLogger({ level: "error" }));
+  return new RelayPool({
+    relays: [relay],
+    defaultRelay: relay,
+    relayHosts: {},
+    secret: secret as never,
+    stats,
+    channelCacheTtlMs: 5 * 60 * 1000,
+    fetchImpl: globalThis.fetch as typeof fetch,
+  });
+}
+
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -51,7 +68,15 @@ async function makeServerAndClient(secret: string, relay: string) {
     { name: "test", version: "0.0.0" },
     { capabilities: {}, instructions: "test" },
   );
-  registerPostMessageTool(server, secret as never, relay, undefined, { mode: "mutate" });
+  registerPostMessageTool(
+    server,
+    secret as never,
+    relay,
+    undefined,
+    { mode: "mutate" },
+    undefined,
+    makePool(SECRET, RELAY),
+  );
   const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await Promise.all([client.connect(ct), server.connect(st)]);
