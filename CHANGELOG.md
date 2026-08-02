@@ -3,7 +3,35 @@
 All notable changes to `@buzz/mcp` are documented in this file. The format
 loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased] — Phase 4 (multi-relay plan)
+## [Unreleased] — Phase 5 (multi-relay plan)
+
+Rollout + documentation. No code changes — this phase ships the
+operator-facing material for the Phases 1–4 rollout.
+
+### Added
+
+- **`docs/onboarding.md`** — 30-minute walkthrough for a new operator:
+  install, configure, verify, modes, multi-relay, subscriptions, logs,
+  troubleshooting. Patterned after `docs/2026-07-30-operator-runbook.md`.
+- **`docs/smoke-test-plan.md`** — checklist for each downstream
+  consumer (claude-cli, codex-cli, Buzz.app, self-test). Explicit
+  rollback criteria.
+- **`docs/mcp-config.example.json`** — two new variants:
+  - `multi_relay_read_only`: the safe starting config for new operators.
+  - `multi_relay_full_mutate`: the multi-relay config with full writes
+    (opt-in only).
+
+### Bumps
+
+No version bump. Documentation-only release.
+
+## [0.1.6] — 2026-08-02 (Phase 4)
+
+Subscription multiplexing. PR #14.
+
+## [0.1.5] — 2026-08-02 (Phase 3)
+
+Multi-relay core. PR #13.
 
 Adds subscription multiplexing. The existing `SubscriptionManager` (single
 WebSocket) is now wrapped in a `MultiRelaySubscriptionManager` that fans
