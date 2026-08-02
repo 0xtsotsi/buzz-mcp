@@ -1,5 +1,5 @@
 {
-  "_": "Copy-pasteable GG Coder configs for @buzz/mcp. Three variants live under three top-level keys. Each variant is a complete mcpServers object — copy the inner mcpServers block into your real ~/.gg/mcp.json alongside any existing entries.",
+  "_": "Copy-pasteable GG Coder configs for @buzz/mcp. Multiple variants live under top-level keys. Each variant is a complete mcpServers object — copy the inner mcpServers block into your real ~/.gg/mcp.json alongside any existing entries.",
   "trackA_local_pinned_path": {
     "_": "Track A — local pinned path. Recommended for development; lets you rebuild & restart in one cycle.",
     "mcpServers": {
@@ -46,6 +46,45 @@
         "env": {
           "BUZZ_PRIVATE_KEY": "${BUZZ_PRIVATE_KEY}",
           "BUZZ_RELAY_URL": "https://coreprt.webrnds.com"
+        }
+      }
+    }
+  },
+  "multi_relay_read_only": {
+    "_": "Multi-relay config (Phase 3). The relay list is a JSON array string. Default mode is `mutate-with-confirm` (Phase 1) — set `BUZZ_MCP_MODE=read-only` for the read-only installation that the plan recommends for new operators.",
+    "mcpServers": {
+      "instatic": { "_": "your existing server (unchanged)" },
+      "buzz": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@buzz/mcp"
+        ],
+        "env": {
+          "BUZZ_PRIVATE_KEY": "${env:BUZZ_PRIVATE_KEY}",
+          "BUZZ_RELAY_URLS": "[\"https://coreprt.webrnds.com\",\"https://relay-b.example.com\"]",
+          "BUZZ_MCP_MODE": "read-only",
+          "BUZZ_MCP_LOG": "info"
+        }
+      }
+    }
+  },
+  "multi_relay_full_mutate": {
+    "_": "Multi-relay config with full mutate (writes fan out across all configured relays). For operators who have opted out of the Phase 1 default.",
+    "mcpServers": {
+      "instatic": { "_": "your existing server (unchanged)" },
+      "buzz": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@buzz/mcp"
+        ],
+        "env": {
+          "BUZZ_PRIVATE_KEY": "${env:BUZZ_PRIVATE_KEY}",
+          "BUZZ_RELAY_URLS": "[\"https://coreprt.webrnds.com\",\"https://relay-b.example.com\"]",
+          "BUZZ_MCP_MODE": "mutate",
+          "BUZZ_MCP_LOG": "info",
+          "BUZZ_MCP_LOG_FILE": "~/Library/Logs/xyz.block.buzz.app/agents/buzz-mcp.log"
         }
       }
     }
