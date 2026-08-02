@@ -16,8 +16,10 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { BuzzConfig } from "../config/schema.js";
 import { buildEdit, buildMessage, buildReaction, type ImetaEntry } from "../relay/event-builder.js";
 import type { NsecOrHex } from "../relay/signer.js";
+import { gateToMcpBody, gateWrite } from "../util/mode.js";
 import { type CfAccess, signedFetchWithTimeout } from "../util/relay-call.js";
 
 /** Hard cap on a single message body, in bytes (UTF-8). */
@@ -53,6 +55,7 @@ export function registerPostMessageTool(
   secret: NsecOrHex,
   relayUrl: string,
   cfAccess?: CfAccess,
+  config?: BuzzConfig,
 ): void {
   // Note: AbortController-based timeout is wired around the signedFetch call
   // below; signedFetch itself does not accept a signal, so we race it.
@@ -60,7 +63,8 @@ export function registerPostMessageTool(
     "buzz_post_message",
     "Post a message to a CorePrt channel. Returns {event_id, accepted, channel} on success. " +
       "The relay may take 1-2s to acknowledge. The BUZZ_PRIVATE_KEY env var must be set; " +
-      "never pass the key as a parameter. Imeta entries follow NIP-92; replyTo is a 64-char hex event id.",
+      "never pass the key as a parameter. Imeta entries follow NIP-92; replyTo is a 64-char hex event id. " +
+      "Respects BUZZ_MCP_MODE (read-only / mutate-with-confirm / mutate) and returns the signed event JSON without posting.",
     {
       channel: z
         .string()
@@ -90,6 +94,17 @@ export function registerPostMessageTool(
         .max(MAX_IMETA_ENTRIES)
         .optional()
         .describe("NIP-92 media entries, max 16."),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe("If true, return the signed event JSON without posting. Useful for previews."),
+      confirm: z
+        .boolean()
+        .optional()
+        .describe(
+          "Required when BUZZ_MCP_MODE=mutate-with-confirm. Re-call with " +
+            "confirm: true to actually publish the pending event.",
+        ),
     },
     async (args) => {
       // 1. Byte-length guard (the relay's max_plaintext_len is 32768).
@@ -106,6 +121,31 @@ export function registerPostMessageTool(
         replyTo: args.replyTo,
         imeta: args.imeta as ImetaEntry[] | undefined,
       });
+
+      // 2b. Phase 1 mode gate.
+      const gate = gateWrite({
+        mode: config?.mode ?? "mutate",
+        confirm: args.confirm,
+        dryRun: args.dryRun,
+        unsigned: event,
+        preview: `post_message channel=${event.tags.find((t) => t[0] === "h")?.[1] ?? args.channel} bytes=${bytes}`,
+      });
+
+      if (gate.kind === "read-only") {
+        throw new Error(gate.message);
+      }
+      if (gate.kind === "pending-confirm" || gate.kind === "dry-run") {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: gateToMcpBody(gate, {
+                channel: args.channel.replace(/^#/, "").trim(),
+              }),
+            },
+          ],
+        };
+      }
 
       // 3. POST to the relay with a 5s timeout (race the signedFetch).
       const resp = await signedFetchWithTimeout(
@@ -190,12 +230,14 @@ export function registerEditMessageTool(
   secret: NsecOrHex,
   relayUrl: string,
   cfAccess?: CfAccess,
+  config?: BuzzConfig,
 ): void {
   server.tool(
     "buzz_edit_message",
     "Edit an existing message (kind:40003). Returns the event id, the " +
       "target event id, and the new content. NOTE: 40003 is the relay-owner " +
-      "edit kind — see the buildEdit helper for caveats.",
+      "edit kind — see the buildEdit helper for caveats. " +
+      "Respects BUZZ_MCP_MODE and accepts dryRun: true (returns the signed event without posting).",
     {
       eventId: z
         .string()
@@ -209,6 +251,17 @@ export function registerEditMessageTool(
       originalKind: z
         .union([z.literal(1), z.literal(9)])
         .describe("Kind of the event being edited (1 or 9). Required."),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe("If true, return the signed event JSON without posting. Useful for previews."),
+      confirm: z
+        .boolean()
+        .optional()
+        .describe(
+          "Required when BUZZ_MCP_MODE=mutate-with-confirm. Re-call with " +
+            "confirm: true to actually publish the pending event.",
+        ),
     },
     async (args) => {
       const byteLen = new TextEncoder().encode(args.content).byteLength;
@@ -222,6 +275,30 @@ export function registerEditMessageTool(
         newContent: args.content,
         originalKind: args.originalKind,
       });
+
+      const gate = gateWrite({
+        mode: config?.mode ?? "mutate",
+        confirm: args.confirm,
+        dryRun: args.dryRun,
+        unsigned: event,
+        preview: `edit_message target=${args.eventId} bytes=${byteLen}`,
+      });
+
+      if (gate.kind === "read-only") {
+        throw new Error(gate.message);
+      }
+      if (gate.kind === "pending-confirm" || gate.kind === "dry-run") {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: gateToMcpBody(gate, {
+                target: args.eventId,
+              }),
+            },
+          ],
+        };
+      }
 
       const resp = await signedFetchWithTimeout(
         secret,
@@ -274,17 +351,29 @@ export function registerReactTool(
   secret: NsecOrHex,
   relayUrl: string,
   cfAccess?: CfAccess,
+  config?: BuzzConfig,
 ): void {
   server.tool(
     "buzz_react",
     "Post a reaction (kind:7 NIP-25). Returns the event id, the target event " +
-      "id, and the emoji.",
+      "id, and the emoji. Respects BUZZ_MCP_MODE and accepts dryRun: true (returns the signed event without posting).",
     {
       eventId: z
         .string()
         .regex(/^[0-9a-f]{64}$/, "must be 64 lowercase hex characters")
         .describe("Event id of the message being reacted to. Required."),
       emoji: z.string().min(1).max(16).describe("Emoji shortcode (1–16 chars). Required."),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe("If true, return the signed event JSON without posting. Useful for previews."),
+      confirm: z
+        .boolean()
+        .optional()
+        .describe(
+          "Required when BUZZ_MCP_MODE=mutate-with-confirm. Re-call with " +
+            "confirm: true to actually publish the pending event.",
+        ),
     },
     async (args) => {
       const event = await buildReaction({
@@ -292,6 +381,31 @@ export function registerReactTool(
         targetEventId: args.eventId,
         emoji: args.emoji,
       });
+
+      const gate = gateWrite({
+        mode: config?.mode ?? "mutate",
+        confirm: args.confirm,
+        dryRun: args.dryRun,
+        unsigned: event,
+        preview: `react target=${args.eventId} emoji=${args.emoji}`,
+      });
+
+      if (gate.kind === "read-only") {
+        throw new Error(gate.message);
+      }
+      if (gate.kind === "pending-confirm" || gate.kind === "dry-run") {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: gateToMcpBody(gate, {
+                target: args.eventId,
+                emoji: args.emoji,
+              }),
+            },
+          ],
+        };
+      }
 
       const resp = await signedFetchWithTimeout(
         secret,

@@ -93,6 +93,10 @@ describe("Cloudflare Access header forwarding", () => {
     // Required by createServer() — set every test.
     process.env["BUZZ_PRIVATE_KEY"] = SECRET;
     process.env["BUZZ_RELAY_URL"] = RELAY;
+    // Phase 1: BUZZ_MCP_MODE defaults to `mutate-with-confirm`. The existing
+    // CF-Access header tests pre-date Phase 1 and expect the request to fire
+    // immediately; opt back into the v0.1.x behavior here.
+    process.env["BUZZ_MCP_MODE"] = "mutate";
   });
 
   afterEach(() => {
