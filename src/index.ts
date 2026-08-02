@@ -7,8 +7,17 @@
  * PR #5 adds the WebSocket subscription manager + 3 tools
  * (`buzz_subscribe`, `buzz_unsubscribe`, `buzz_poll`).
  * PR #6 will add docs.
+ * Phase 1 (multi-relay plan) adds:
+ *   - `parseEnv()` schema validation in `src/config/schema.ts` — bad config
+ *     fails the server boot with a clear error.
+ *   - `BUZZ_MCP_MODE` enforcement (`read-only`, `mutate-with-confirm`,
+ *     `mutate`) plumbed through every write tool via `gateWrite`.
+ *   - `dryRun: true` per write tool.
+ *   - `BUZZ_RELAY_ALLOWED` per-call allowlist.
+ * Phase 3 will add the `RelayPool` that consumes `config.relays`.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { type BuzzConfig, parseEnv } from "./config/schema.js";
 import type { NsecOrHex } from "./relay/signer.js";
 import { SubscriptionManager } from "./relay/subscription.js";
 import { registerFetchEventsTool, registerSearchTool } from "./tools/fetch.js";
@@ -34,9 +43,7 @@ import { registerPostThreadSummaryTool } from "./tools/summaries.js";
 import type { CfAccess } from "./util/relay-call.js";
 
 const SERVER_NAME = "@buzz/mcp";
-const SERVER_VERSION = "0.1.1";
-
-const DEFAULT_RELAY_URL = "https://coreprt.webrnds.com";
+const SERVER_VERSION = "0.1.3";
 
 /**
  * All 16 tool names registered by this build, in alphabetical order. Kept
@@ -67,16 +74,21 @@ export const REGISTERED_TOOLS: string[] = [
   "buzz_upload_media",
 ];
 
-function buildInstructions(
-  relayUrl: string,
-  tools: string[],
-  cfAccess: CfAccess | undefined,
-): string {
+function buildInstructions(config: BuzzConfig, tools: string[]): string {
+  const modeNote =
+    config.mode === "mutate-with-confirm"
+      ? " (write tools return pending-confirm unless caller passes confirm: true)"
+      : config.mode === "read-only"
+        ? " (write tools refuse at dispatch)"
+        : " (write tools sign and post immediately)";
   return [
     "@buzz/mcp is an MCP server for the CorePrt Nostr relay.",
     "",
-    `Relay: ${relayUrl}`,
-    `Cloudflare Access: ${cfAccess !== undefined ? "forwarded (service token present)" : "not in path"}`,
+    `Relay (default): ${config.defaultRelay}`,
+    `Relays configured: ${config.relays.length}`,
+    `Mode: ${config.mode}${modeNote}`,
+    `Cloudflare Access: ${config.cfAccess !== undefined ? "forwarded (service token present)" : "not in path"}`,
+    `Write allowlist: ${config.relayAllowed === undefined ? "unset (all configured relays allowed)" : `${config.relayAllowed.length} allowed`}`,
     "",
     "Tools registered in this build:",
     ...tools.map((t) => `  - ${t}`),
@@ -99,11 +111,14 @@ function buildInstructions(
 /**
  * Construct a fresh McpServer instance.
  *
- * Reads `BUZZ_PRIVATE_KEY`, `BUZZ_RELAY_URL`, and the optional
- * `CF_ACCESS_CLIENT_ID` + `CF_ACCESS_CLIENT_SECRET` env vars at call time.
- * Throws a clear error if `BUZZ_PRIVATE_KEY` is missing.
+ * Phase 1 (this PR): env validation is centralized in `parseEnv()`. The
+ * server refuses to start on bad config — missing `BUZZ_PRIVATE_KEY`,
+ * malformed `BUZZ_RELAY_URLS`, wrong-format secret, etc. all surface as a
+ * thrown `ZodError` at startup, not as a silent partial-config later.
  *
- * The relay URL defaults to "https://coreprt.webrnds.com" if unset.
+ * The relay URL defaults to "https://coreprt.webrnds.com" if neither
+ * `BUZZ_RELAY_URL` nor `BUZZ_RELAY_URLS` is set. Phase 3 (multi-relay)
+ * will iterate over `config.relays`; Phase 1 only validates the env.
  *
  * CF Access: when BOTH `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`
  * are non-empty, every `signedFetch` automatically forwards
@@ -118,25 +133,13 @@ function buildInstructions(
  * the first `buzz_subscribe` call.
  */
 export function createServer(): McpServer {
-  const secret = process.env["BUZZ_PRIVATE_KEY"] as NsecOrHex | undefined;
-  if (!secret) {
-    throw new Error("BUZZ_PRIVATE_KEY is not set. Add it to the env block in ~/.gg/mcp.json.");
-  }
+  // Centralized env parsing. Throws on bad config; we let the throw
+  // propagate so the caller (CLI/RPC startup) sees a clear error.
+  const config = parseEnv();
 
-  const relayUrl = process.env["BUZZ_RELAY_URL"] ?? DEFAULT_RELAY_URL;
-
-  // Cloudflare Access service-token credentials. Both must be present and
-  // non-empty; if either is missing, fall through with `cfAccess = undefined`
-  // so the local-relay dev path (no CF Access in front) keeps working.
-  const cfClientId = process.env["CF_ACCESS_CLIENT_ID"];
-  const cfClientSecret = process.env["CF_ACCESS_CLIENT_SECRET"];
-  const cfAccess: CfAccess | undefined =
-    cfClientId !== undefined &&
-    cfClientId !== "" &&
-    cfClientSecret !== undefined &&
-    cfClientSecret !== ""
-      ? { clientId: cfClientId, clientSecret: cfClientSecret }
-      : undefined;
+  const secret = config.secret as NsecOrHex;
+  const relayUrl = config.defaultRelay;
+  const cfAccess: CfAccess | undefined = config.cfAccess;
 
   const subs = new SubscriptionManager(secret, relayUrl);
 
@@ -144,17 +147,17 @@ export function createServer(): McpServer {
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
       capabilities: {},
-      instructions: buildInstructions(relayUrl, REGISTERED_TOOLS, cfAccess),
+      instructions: buildInstructions(config, REGISTERED_TOOLS),
     },
   );
 
-  registerPostMessageTool(server, secret, relayUrl, cfAccess);
-  registerEditMessageTool(server, secret, relayUrl, cfAccess);
-  registerReactTool(server, secret, relayUrl, cfAccess);
+  registerPostMessageTool(server, secret, relayUrl, cfAccess, config);
+  registerEditMessageTool(server, secret, relayUrl, cfAccess, config);
+  registerReactTool(server, secret, relayUrl, cfAccess, config);
   registerIdentityTool(server, secret, relayUrl, cfAccess);
   registerListChannelsTool(server, secret, relayUrl, cfAccess);
-  registerCreateChannelTool(server, secret, relayUrl, cfAccess);
-  registerAddMemberTool(server, secret, relayUrl, cfAccess);
+  registerCreateChannelTool(server, secret, relayUrl, cfAccess, config);
+  registerAddMemberTool(server, secret, relayUrl, cfAccess, config);
   registerFetchEventsTool(server, secret, relayUrl, cfAccess);
   registerSearchTool(server, secret, relayUrl, cfAccess);
   registerCreateJobTool(server, secret, relayUrl, cfAccess);
@@ -168,4 +171,7 @@ export function createServer(): McpServer {
   return server;
 }
 
+export type { BuzzConfig, Mode } from "./config/schema.js";
+// Re-export parseEnv + ModeSchema + types for tests + downstream consumers.
+export { ModeSchema, parseEnv } from "./config/schema.js";
 export { SERVER_NAME, SERVER_VERSION };

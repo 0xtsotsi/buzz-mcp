@@ -3,6 +3,81 @@
 All notable changes to `@buzz/mcp` are documented in this file. The format
 loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased] — Phase 1 (multi-relay plan)
+
+Adds configuration discipline + dry-run safety. No new MCP tools — the
+existing 16 tools gain mode-aware behavior. Phase 3 (multi-relay `RelayPool`)
+will consume the parsed `BUZZ_RELAY_URLS` array that this PR validates.
+
+### Added
+
+- **`src/config/schema.ts` — Zod schema for `process.env`.** Every env var
+  the server reads is now validated at `createServer()` time. Bad config
+  (missing `BUZZ_PRIVATE_KEY`, malformed `BUZZ_RELAY_URLS`, wrong-format
+  secret) throws a `ZodError` with a clear message instead of silently
+  falling through to a partial-config crash later. Exports:
+  - `parseEnv()` → `BuzzConfig` (read-only snapshot).
+  - `ModeSchema` (the three mode literals).
+  - Default TTLs (`DEFAULT_CHANNEL_CACHE_TTL_MS`, `DEFAULT_TOOL_TIMEOUT_MS`).
+- **`BUZZ_MCP_MODE` — three modes:**
+  - `read-only` (default for new installations) — every write tool refuses
+    at dispatch with a clear `MCP is in read-only mode` error.
+  - `mutate-with-confirm` (Phase 1's new default) — write tools log the
+    unsigned event JSON to stderr at WARN and return
+    `{status: 'pending-confirm', unsigned_event, ...}` unless the caller
+    passes `confirm: true`.
+  - `mutate` (kept for opt-out) — write tools sign and post immediately
+    (the v0.1.x behavior).
+- **`dryRun: true` per write tool** — returns the signed event JSON
+  without posting. Useful for previews; works in any mode.
+- **`BUZZ_RELAY_URLS` (JSON array)** — Phase 1 validates the env;
+  Phase 3 will iterate over it. Merged with `BUZZ_RELAY_URL` (singular
+  wins) and deduped. Empty arrays fail at startup (Q3: silent fall-through
+  is unsafe).
+- **`BUZZ_RELAY_ALLOWED` (JSON array)** — optional allowlist. If set,
+  every default relay must be in it; startup fails otherwise.
+- **`BUZZ_RELAY_HOST_0..3`** — collected into `relayHosts` for Phase 3.
+- **`src/util/mode.ts` — `gateWrite` chokepoint.** Every write tool
+  routes through it before signing or posting. Pure (no IO), with an
+  injectable `warn` sink for tests.
+
+### Changed
+
+- `createServer()` now calls `parseEnv()` and threads the resulting
+  `BuzzConfig` into every write tool. Read tools receive the existing
+  (secret, relayUrl, cfAccess) signature — Phase 1 keeps them on the
+  single-relay path. Phase 3's `RelayPool` will widen that signature.
+- Write tools now accept `dryRun: true` and `confirm: true` parameters.
+  Both are optional and default to `undefined` (so existing callers keep
+  working — but only in `mutate` mode; the new default of
+  `mutate-with-confirm` will surface a `pending-confirm` response, which
+  is the documented safety improvement).
+- `test/unit/cf-access-headers.spec.ts` now sets `BUZZ_MCP_MODE=mutate`
+  to keep its pre-Phase 1 assertions. The new `mode-write-tools.spec.ts`
+  covers the Phase 1 behavior end-to-end.
+
+### Backward compatibility
+
+Operators who want to keep the v0.1.x behavior set
+`BUZZ_MCP_MODE=mutate` in their env block, or pass `confirm: true` on
+every write call. Operators who don't set `BUZZ_MCP_MODE` get the new
+default of `mutate-with-confirm`.
+
+### Known limitations
+
+- The "unsigned event" surfaced in `pending-confirm` / `dry-run` responses
+  is actually the *signed* event — `buildMessage` calls `signEvent`
+  locally. The gate's job is to stop the network call, not to skip
+  signing. v0.2 will switch to a pre-sign builder so the returned
+  payload is truly unsigned.
+- `BUZZ_RELAY_ALLOWED` is enforced at startup, not per call. Phase 3's
+  `RelayPool` will enforce per-call.
+- The `confirm: true` parameter is a *bypass* of the mutate-with-confirm
+  prompt, not a resume of a pending event. The MCP server does not store
+  pending events between calls; the second call rebuilds the event from
+  args (different `created_at`, different event id). The plan calls this
+  out as a v0.2 improvement.
+
 ## [0.1.0] — 2026-07-31
 
 The first public cut of `@buzz/mcp`. Ships **16 MCP tools** and the shared

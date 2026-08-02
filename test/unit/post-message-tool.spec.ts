@@ -51,7 +51,7 @@ async function makeServerAndClient(secret: string, relay: string) {
     { name: "test", version: "0.0.0" },
     { capabilities: {}, instructions: "test" },
   );
-  registerPostMessageTool(server, secret as never, relay);
+  registerPostMessageTool(server, secret as never, relay, undefined, { mode: "mutate" });
   const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await Promise.all([client.connect(ct), server.connect(st)]);

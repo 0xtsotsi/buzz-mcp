@@ -13,9 +13,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { npubEncode } from "nostr-tools/nip19";
 import { z } from "zod";
+import type { BuzzConfig } from "../config/schema.js";
 import type { SignedFetchResult } from "../relay/client.js";
 import { buildAddMember, buildCreateChannel } from "../relay/event-builder.js";
 import { getPublicKey, type NostrEvent, type NsecOrHex } from "../relay/signer.js";
+import { gateToMcpBody, gateWrite } from "../util/mode.js";
 import { type CfAccess, formatRelayError, signedFetchWithTimeout } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
@@ -199,17 +201,27 @@ export function registerListChannelsTool(
 /**
  * Register `buzz_create_channel`. POSTs a kind:9007 NIP-29 `create_channel`
  * event to `/events`. The relay allocates the channel UUID.
+ *
+ * Phase 1 (multi-relay plan): respects `BUZZ_MCP_MODE` and `dryRun`.
+ *   - `BUZZ_MCP_MODE=read-only`            → throws at dispatch.
+ *   - `BUZZ_MCP_MODE=mutate-with-confirm` → returns
+ *     `{status: 'pending-confirm', unsigned_event}` unless `confirm: true`.
+ *   - `dryRun: true`                      → returns the signed event JSON
+ *     without posting.
  */
 export function registerCreateChannelTool(
   server: McpServer,
   secret: NsecOrHex,
   relayUrl: string,
   cfAccess?: CfAccess,
+  config?: BuzzConfig,
 ): void {
   server.tool(
     "buzz_create_channel",
     "Create a new channel (kind:9007 NIP-29 create_channel). Returns the event id " +
-      "and the channel name/visibility. The relay allocates the channel UUID.",
+      "and the channel name/visibility. The relay allocates the channel UUID. " +
+      "Respects BUZZ_MCP_MODE (read-only / mutate-with-confirm / mutate) and " +
+      "accepts dryRun: true to inspect the signed event without posting.",
     {
       name: z.string().min(1).max(64).describe("Channel name (NIP-29). Required."),
       visibility: z
@@ -221,6 +233,21 @@ export function registerCreateChannelTool(
         .max(2048)
         .optional()
         .describe("Optional human-readable channel description (NIP-29 `about` tag)."),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, return the signed event JSON without posting. Useful for previews. " +
+            "Useful for previews; ignored in mutate-with-confirm mode (the " +
+            "pending-confirm response already exposes the unsigned event).",
+        ),
+      confirm: z
+        .boolean()
+        .optional()
+        .describe(
+          "Required when BUZZ_MCP_MODE=mutate-with-confirm. Re-call with " +
+            "confirm: true to actually publish the pending event.",
+        ),
     },
     async (args) => {
       const event = await buildCreateChannel({
@@ -229,6 +256,30 @@ export function registerCreateChannelTool(
         visibility: args.visibility,
         description: args.description,
       });
+
+      const gate = gateWrite({
+        mode: config?.mode ?? "mutate",
+        confirm: args.confirm,
+        dryRun: args.dryRun,
+        unsigned: event,
+        preview: `create_channel name=${args.name} visibility=${args.visibility ?? "public"}`,
+      });
+
+      if (gate.kind === "read-only") {
+        throw new Error(gate.message);
+      }
+      if (gate.kind === "pending-confirm" || gate.kind === "dry-run") {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: gateToMcpBody(gate, {
+                channel: { name: args.name, visibility: args.visibility ?? "public" },
+              }),
+            },
+          ],
+        };
+      }
 
       let resp: SignedFetchResult;
       try {
@@ -293,19 +344,32 @@ export function registerAddMemberTool(
   secret: NsecOrHex,
   relayUrl: string,
   cfAccess?: CfAccess,
+  config?: BuzzConfig,
 ): void {
   server.tool(
     "buzz_add_member",
     "Add a member to a channel (kind:9000 NIP-29 add_member). " +
       "IMPORTANT: real back-to-back add_member calls must be `sleep 1` apart " +
       "to let the relay settle the kind:9000 → 44100 notification round-trip; " +
-      "this tool does NOT enforce that — the caller is responsible.",
+      "this tool does NOT enforce that — the caller is responsible. " +
+      "Respects BUZZ_MCP_MODE and accepts dryRun: true (returns the signed event without posting).",
     {
       pubkey: z
         .string()
         .regex(/^[0-9a-f]{64}$/, "must be 64 lowercase hex characters")
         .describe("Pubkey (hex) of the member to add. Required."),
       role: z.enum(["admin", "member"]).optional().describe('Member role (default "member").'),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe("If true, return the signed event JSON without posting. Useful for previews."),
+      confirm: z
+        .boolean()
+        .optional()
+        .describe(
+          "Required when BUZZ_MCP_MODE=mutate-with-confirm. Re-call with " +
+            "confirm: true to actually publish the pending event.",
+        ),
     },
     async (args) => {
       const event = await buildAddMember({
@@ -313,6 +377,30 @@ export function registerAddMemberTool(
         pubkey: args.pubkey,
         role: args.role,
       });
+
+      const gate = gateWrite({
+        mode: config?.mode ?? "mutate",
+        confirm: args.confirm,
+        dryRun: args.dryRun,
+        unsigned: event,
+        preview: `add_member pubkey=${args.pubkey} role=${args.role ?? "member"}`,
+      });
+
+      if (gate.kind === "read-only") {
+        throw new Error(gate.message);
+      }
+      if (gate.kind === "pending-confirm" || gate.kind === "dry-run") {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: gateToMcpBody(gate, {
+                member: { pubkey: args.pubkey, role: args.role ?? "member" },
+              }),
+            },
+          ],
+        };
+      }
 
       let resp: SignedFetchResult;
       try {
