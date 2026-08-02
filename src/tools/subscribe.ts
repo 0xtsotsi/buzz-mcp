@@ -1,7 +1,7 @@
 /**
  * Subscription MCP tools: `buzz_subscribe`, `buzz_unsubscribe`, `buzz_poll`.
  *
- * All three tools share the same {@link SubscriptionManager} instance held in
+ * All three tools share the same {@link MultiRelaySubscriptionManager} instance held in
  * the McpServer's closure. The manager lazily opens a single NIP-01 WS to
  * the relay on first use, completes the NIP-42 `AUTH` handshake if the
  * relay sends a challenge, and buffers `EVENT` frames per-sub.
@@ -15,12 +15,8 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-
-import type {
-  SubscriptionEvent,
-  SubscriptionFilter,
-  SubscriptionManager,
-} from "../relay/subscription.js";
+import type { MultiRelaySubscriptionManager } from "../relay/multi-subscription.js";
+import type { SubscriptionEvent, SubscriptionFilter } from "../relay/subscription.js";
 import type { CfAccess } from "../util/relay-call.js";
 
 /** Per-call timeout, milliseconds. The relay should ack in <2s; 5s is generous. */
@@ -109,6 +105,13 @@ const subscribeArgsSchema = z.object({
     .optional()
     .describe(`Default ${SUBSCRIBE_DEFAULT_LIMIT}, max ${SUBSCRIBE_MAX_LIMIT}.`),
   search: z.string().min(1).max(256).optional(),
+  relays: z
+    .array(z.string().url())
+    .optional()
+    .describe(
+      "Optional per-call relay list (overrides the configured relay list). " +
+        "Use this to subscribe to a specific subset of relays.",
+    ),
   filter: subscribeFilterSchema
     .optional()
     .describe("Optional raw NIP-01 filter. Top-level shortcut fields override matching keys here."),
@@ -139,7 +142,7 @@ const pollArgsSchema = z.object({
 
 /**
  * Race a promise against a timer. Used to enforce the per-tool 5s ceiling
- * without touching the underlying WS — `SubscriptionManager.start()` can
+ * without touching the underlying WS — `MultiRelaySubscriptionManager.start()` can
  * block on a TCP/TLS handshake, and we want the tool to surface a timeout
  * rather than hang forever.
  */
@@ -198,15 +201,15 @@ function textResult(value: unknown): { content: [{ type: "text"; text: string }]
 
 /**
  * Register `buzz_subscribe`. Opens a `["REQ", sub_id, filter]` against the
- * shared `SubscriptionManager`. Returns `{sub_id, open, filter}` on success.
+ * shared `MultiRelaySubscriptionManager`. Returns `{sub_id, open, filter}` on success.
  *
- * The lazy `SubscriptionManager.start()` call inside `subscribe()` may block
+ * The lazy `MultiRelaySubscriptionManager.start()` call inside `subscribe()` may block
  * on the initial WS open + NIP-42 auth; the 5s timeout catches the worst
  * case (relay is unreachable) and surfaces it as a tool error.
  */
 export function registerSubscribeTool(
   server: McpServer,
-  subs: SubscriptionManager,
+  subs: MultiRelaySubscriptionManager,
   _cfAccess?: CfAccess,
 ): void {
   server.tool(
@@ -218,7 +221,11 @@ export function registerSubscribeTool(
     subscribeArgsSchema.shape,
     async (args) => {
       const filter = buildFilter(args);
-      const sub_id = await withTimeout(subs.subscribe(filter), TOOL_TIMEOUT_MS, "buzz_subscribe");
+      const sub_id = await withTimeout(
+        subs.subscribe(filter, { relays: args.relays }),
+        TOOL_TIMEOUT_MS,
+        "buzz_subscribe",
+      );
       return textResult({ sub_id, open: true, filter });
     },
   );
@@ -230,7 +237,7 @@ export function registerSubscribeTool(
  */
 export function registerUnsubscribeTool(
   server: McpServer,
-  subs: SubscriptionManager,
+  subs: MultiRelaySubscriptionManager,
   _cfAccess?: CfAccess,
 ): void {
   server.tool(
@@ -253,7 +260,7 @@ export function registerUnsubscribeTool(
  */
 export function registerPollTool(
   server: McpServer,
-  subs: SubscriptionManager,
+  subs: MultiRelaySubscriptionManager,
   _cfAccess?: CfAccess,
 ): void {
   server.tool(
