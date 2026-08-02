@@ -18,6 +18,7 @@ import type { SignedFetchResult } from "../relay/client.js";
 import { buildAddMember, buildCreateChannel } from "../relay/event-builder.js";
 import { getPublicKey, type NostrEvent, type NsecOrHex } from "../relay/signer.js";
 import { gateToMcpBody, gateWrite } from "../util/mode.js";
+import type { SignedFetchWithTimeoutExtras } from "../util/relay-call.js";
 import { type CfAccess, formatRelayError, signedFetchWithTimeout } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
@@ -215,6 +216,7 @@ export function registerCreateChannelTool(
   relayUrl: string,
   cfAccess?: CfAccess,
   config?: BuzzConfig,
+  extras?: SignedFetchWithTimeoutExtras,
 ): void {
   server.tool(
     "buzz_create_channel",
@@ -293,6 +295,7 @@ export function registerCreateChannelTool(
           },
           TOOL_TIMEOUT_MS,
           cfAccess,
+          { stats: extras?.stats, tool: "buzz_create_channel" },
         );
       } catch (err) {
         throw new Error(formatRelayError(relayUrl, { cause: err as Error }));
@@ -345,6 +348,7 @@ export function registerAddMemberTool(
   relayUrl: string,
   cfAccess?: CfAccess,
   config?: BuzzConfig,
+  extras?: SignedFetchWithTimeoutExtras,
 ): void {
   server.tool(
     "buzz_add_member",
@@ -414,6 +418,7 @@ export function registerAddMemberTool(
           },
           TOOL_TIMEOUT_MS,
           cfAccess,
+          { stats: extras?.stats, tool: "buzz_add_member" },
         );
       } catch (err) {
         throw new Error(formatRelayError(relayUrl, { cause: err as Error }));

@@ -9,8 +9,15 @@
  *
  * This module centralizes those. Adding a new tool should not require
  * re-implementing the timeout/ack/error dance.
+ *
+ * Phase 2 (multi-relay plan) adds:
+ *   - Structured logging on every signed fetch (info / warn / debug).
+ *   - Stats recording on every signed fetch (Phase 2 exposes them via
+ *     `buzz_get_stats`; Phase 3's `RelayPool` will pass a shared store).
  */
 import { type SignedFetchOptions, signedFetch } from "../relay/client.js";
+import { outcomeFromStatus, type StatsStore } from "../relay/stats.js";
+import { getLogger } from "./log.js";
 
 /** Default per-tool timeout, in milliseconds. */
 export const DEFAULT_TOOL_TIMEOUT_MS = 5_000;
@@ -42,11 +49,23 @@ export const DEFAULT_TOOL_TIMEOUT_MS = 5_000;
  */
 export type CfAccess = { clientId: string; clientSecret: string };
 
+/**
+ * Phase 2: optional `stats` sink. When provided, every signed fetch
+ * records its outcome into the `StatsStore` so `buzz_get_stats` can
+ * surface it. Phase 3's `RelayPool` will pass a single shared store.
+ */
+export interface SignedFetchWithTimeoutExtras {
+  stats?: StatsStore;
+  /** Tool name to log with. Default `undefined`. */
+  tool?: string;
+}
+
 export async function signedFetchWithTimeout(
-  secret: Parameters<typeof signedFetch>[0],
+  secret: import("../relay/signer.js").NsecOrHex,
   opts: SignedFetchOptions,
   timeoutMs: number = DEFAULT_TOOL_TIMEOUT_MS,
   cfAccess?: CfAccess,
+  extras: SignedFetchWithTimeoutExtras = {},
 ): Promise<Awaited<ReturnType<typeof signedFetch>>> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
@@ -58,6 +77,8 @@ export async function signedFetchWithTimeout(
       opts.signal.addEventListener("abort", () => ac.abort(), { once: true });
     }
   }
+  const log = getLogger();
+  const start = Date.now();
   try {
     const mergedOpts: SignedFetchOptions =
       cfAccess !== undefined
@@ -70,7 +91,34 @@ export async function signedFetchWithTimeout(
             },
           }
         : opts;
-    return await signedFetch(secret, { ...mergedOpts, signal: ac.signal });
+    const result = await signedFetch(secret, { ...mergedOpts, signal: ac.signal });
+    const latencyMs = Date.now() - start;
+    const outcome = outcomeFromStatus(result.status);
+    if (extras.stats !== undefined) {
+      extras.stats.record(opts.url, outcome, latencyMs);
+    }
+    log.debug("relay.fetch", {
+      tool: extras.tool,
+      url: opts.url,
+      status: result.status,
+      latency_ms: latencyMs,
+      outcome,
+    });
+    return result;
+  } catch (err) {
+    const latencyMs = Date.now() - start;
+    const isTimeout = (err as Error).name === "AbortError";
+    if (extras.stats !== undefined) {
+      extras.stats.record(opts.url, isTimeout ? "timeout" : "network_error", latencyMs);
+    }
+    log.warn("relay.fetch.error", {
+      tool: extras.tool,
+      url: opts.url,
+      latency_ms: latencyMs,
+      outcome: isTimeout ? "timeout" : "network_error",
+      error: (err as Error).message,
+    });
+    throw err;
   } finally {
     clearTimeout(timer);
   }
