@@ -7,7 +7,22 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { RelayPool } from "../../src/relay/pool.js";
+import { StatsStore } from "../../src/relay/stats.js";
 import { registerApproveWorkflowTool, registerCreateJobTool } from "../../src/tools/jobs.js";
+import { createLogger } from "../../src/util/log.js";
+
+function makePool(secret: string, relay: string): RelayPool {
+  const stats = new StatsStore(createLogger({ level: "error" }));
+  return new RelayPool({
+    relays: [relay],
+    defaultRelay: relay,
+    relayHosts: {},
+    secret: secret as never,
+    stats,
+    channelCacheTtlMs: 5 * 60 * 1000,
+  });
+}
 
 const SECRET = "0000000000000000000000000000000000000000000000000000000000000001";
 const RELAY = "https://relay.test";
@@ -53,7 +68,7 @@ async function makeServerAndClient(register: RegisterFn) {
     { name: "test", version: "0.0.0" },
     { capabilities: {}, instructions: "test" },
   );
-  register(server, SECRET, RELAY);
+  register(server, SECRET, RELAY, undefined, undefined, makePool(SECRET, RELAY));
   const client = new Client({ name: "test-client", version: "0.0.0" }, { capabilities: {} });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await Promise.all([client.connect(ct), server.connect(st)]);
@@ -81,7 +96,7 @@ describe("buzz_create_job", () => {
 
   it("POSTs a kind:43001 event with title + summary tags and the description in content", async () => {
     fetchSpy = makeFetchSpy(
-      async () => new Response(JSON.stringify({ ok: true }), { status: 202 }),
+      async () => new Response(JSON.stringify({ ok: true, id: "a".repeat(64) }), { status: 202 }),
     );
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
@@ -154,7 +169,7 @@ describe("buzz_approve_workflow", () => {
 
   it("POSTs kind 46030 (grant) for decision=approve", async () => {
     fetchSpy = makeFetchSpy(
-      async () => new Response(JSON.stringify({ ok: true }), { status: 202 }),
+      async () => new Response(JSON.stringify({ ok: true, id: "a".repeat(64) }), { status: 202 }),
     );
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
@@ -181,7 +196,7 @@ describe("buzz_approve_workflow", () => {
 
   it("POSTs kind 46031 (deny) for decision=reject with the comment in content", async () => {
     fetchSpy = makeFetchSpy(
-      async () => new Response(JSON.stringify({ ok: true }), { status: 202 }),
+      async () => new Response(JSON.stringify({ ok: true, id: "a".repeat(64) }), { status: 202 }),
     );
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 
@@ -208,7 +223,7 @@ describe("buzz_approve_workflow", () => {
 
   it("defaults decision to approve when omitted", async () => {
     fetchSpy = makeFetchSpy(
-      async () => new Response(JSON.stringify({ ok: true }), { status: 202 }),
+      async () => new Response(JSON.stringify({ ok: true, id: "a".repeat(64) }), { status: 202 }),
     );
     globalThis.fetch = fetchSpy.spy as unknown as typeof fetch;
 

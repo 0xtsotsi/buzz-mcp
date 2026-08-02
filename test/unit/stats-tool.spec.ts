@@ -85,7 +85,7 @@ describe("buzz_get_stats — end-to-end", () => {
     const body = JSON.parse(getText(result));
     expect(body.stats).toHaveLength(1);
     expect(body.stats[0]).toMatchObject({
-      url: `${RELAY}/events`,
+      url: RELAY,
       calls_total: 1,
       success: 1,
     });

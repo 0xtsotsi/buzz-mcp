@@ -18,6 +18,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type BuzzConfig, parseEnv } from "./config/schema.js";
+import { RelayPool } from "./relay/pool.js";
 import type { NsecOrHex } from "./relay/signer.js";
 import { StatsStore } from "./relay/stats.js";
 import { SubscriptionManager } from "./relay/subscription.js";
@@ -46,7 +47,7 @@ import { createLogger, setLogger } from "./util/log.js";
 import type { CfAccess } from "./util/relay-call.js";
 
 const SERVER_NAME = "@buzz/mcp";
-const SERVER_VERSION = "0.1.4";
+const SERVER_VERSION = "0.1.5";
 
 /**
  * All 16 tool names registered by this build, in alphabetical order. Kept
@@ -160,6 +161,17 @@ export function createServer(): McpServer {
   // signed fetch (and Phase 3's RelayPool). The store is process-local.
   const stats = new StatsStore(logger);
 
+  // Phase 3: RelayPool. Owns the relay list, NIP-11 probe, channel cache.
+  const pool = new RelayPool({
+    relays: config.relays,
+    defaultRelay: config.defaultRelay,
+    relayHosts: config.relayHosts,
+    secret,
+    stats,
+    cfAccess,
+    channelCacheTtlMs: config.channelCacheTtlMs,
+  });
+
   const subs = new SubscriptionManager(secret, relayUrl);
 
   const server = new McpServer(
@@ -170,19 +182,19 @@ export function createServer(): McpServer {
     },
   );
 
-  registerPostMessageTool(server, secret, relayUrl, cfAccess, config, { stats });
-  registerEditMessageTool(server, secret, relayUrl, cfAccess, config, { stats });
-  registerReactTool(server, secret, relayUrl, cfAccess, config, { stats });
+  registerPostMessageTool(server, secret, relayUrl, cfAccess, config, { stats }, pool);
+  registerEditMessageTool(server, secret, relayUrl, cfAccess, config, { stats }, pool);
+  registerReactTool(server, secret, relayUrl, cfAccess, config, { stats }, pool);
   registerIdentityTool(server, secret, relayUrl, cfAccess);
   registerListChannelsTool(server, secret, relayUrl, cfAccess);
   registerCreateChannelTool(server, secret, relayUrl, cfAccess, config, { stats });
   registerAddMemberTool(server, secret, relayUrl, cfAccess, config, { stats });
   registerFetchEventsTool(server, secret, relayUrl, cfAccess);
   registerSearchTool(server, secret, relayUrl, cfAccess);
-  registerCreateJobTool(server, secret, relayUrl, cfAccess, { stats });
-  registerApproveWorkflowTool(server, secret, relayUrl, cfAccess, { stats });
+  registerCreateJobTool(server, secret, relayUrl, cfAccess, { stats }, pool);
+  registerApproveWorkflowTool(server, secret, relayUrl, cfAccess, { stats }, pool);
   registerUploadMediaTool(server, secret, relayUrl, cfAccess, { stats });
-  registerPostThreadSummaryTool(server, secret, relayUrl, cfAccess, { stats });
+  registerPostThreadSummaryTool(server, secret, relayUrl, cfAccess, { stats }, pool);
   registerSubscribeTool(server, subs, cfAccess);
   registerUnsubscribeTool(server, subs, cfAccess);
   registerPollTool(server, subs, cfAccess);

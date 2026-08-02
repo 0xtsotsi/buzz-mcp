@@ -18,32 +18,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { BuzzConfig } from "../config/schema.js";
 import { buildEdit, buildMessage, buildReaction, type ImetaEntry } from "../relay/event-builder.js";
+import type { RelayPool } from "../relay/pool.js";
 import type { NsecOrHex } from "../relay/signer.js";
-import { gateToMcpBody, gateWrite } from "../util/mode.js";
-import type { SignedFetchWithTimeoutExtras } from "../util/relay-call.js";
-import { type CfAccess, signedFetchWithTimeout } from "../util/relay-call.js";
+import type { CfAccess, SignedFetchWithTimeoutExtras } from "../util/relay-call.js";
+import { poolWrite, poolWriteToMcpContent } from "./pool-write.js";
 
 /** Hard cap on a single message body, in bytes (UTF-8). */
 const MAX_CONTENT_BYTES = 32 * 1024;
 
 /** Hard cap on the number of media entries per message. */
 const MAX_IMETA_ENTRIES = 16;
-
-/** Per-call timeout. The relay should ack in <1s; 5s is generous. */
-const TOOL_TIMEOUT_MS = 5_000;
-
-/** Extract the relay-assigned event id from a relay ack body. */
-function extractEventId(body: unknown): string | null {
-  if (!body || typeof body !== "object") return null;
-  const obj = body as Record<string, unknown>;
-  if (typeof obj.id === "string" && /^[0-9a-f]{64}$/.test(obj.id)) {
-    return obj.id;
-  }
-  if (typeof obj.event_id === "string" && /^[0-9a-f]{64}$/.test(obj.event_id)) {
-    return obj.event_id;
-  }
-  return null;
-}
 
 /**
  * Register `buzz_post_message` on the given server. The `secret` is captured
@@ -54,10 +38,11 @@ function extractEventId(body: unknown): string | null {
 export function registerPostMessageTool(
   server: McpServer,
   secret: NsecOrHex,
-  relayUrl: string,
-  cfAccess?: CfAccess,
+  _relayUrl: string,
+  _cfAccess?: CfAccess,
   config?: BuzzConfig,
-  extras?: SignedFetchWithTimeoutExtras,
+  _extras?: SignedFetchWithTimeoutExtras,
+  pool?: RelayPool,
 ): void {
   // Note: AbortController-based timeout is wired around the signedFetch call
   // below; signedFetch itself does not accept a signal, so we race it.
@@ -107,6 +92,20 @@ export function registerPostMessageTool(
           "Required when BUZZ_MCP_MODE=mutate-with-confirm. Re-call with " +
             "confirm: true to actually publish the pending event.",
         ),
+      relays: z
+        .array(z.string().url())
+        .optional()
+        .describe(
+          "Optional per-call relay list (overrides the pool default). " +
+            "Use this to force a write to a specific relay.",
+        ),
+      allowFanout: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true (default), the write is fanned out to all configured relays. " +
+            "Set to false to write only to the default relay.",
+        ),
     },
     async (args) => {
       // 1. Byte-length guard (the relay's max_plaintext_len is 32768).
@@ -124,95 +123,33 @@ export function registerPostMessageTool(
         imeta: args.imeta as ImetaEntry[] | undefined,
       });
 
-      // 2b. Phase 1 mode gate.
-      const gate = gateWrite({
+      // Phase 3: fan-out across configured relays via the pool.
+
+      const { mcpBody, isError } = await poolWrite(pool, event, {
         mode: config?.mode ?? "mutate",
+
         confirm: args.confirm,
+
         dryRun: args.dryRun,
-        unsigned: event,
-        preview: `post_message channel=${event.tags.find((t) => t[0] === "h")?.[1] ?? args.channel} bytes=${bytes}`,
-      });
 
-      if (gate.kind === "read-only") {
-        throw new Error(gate.message);
-      }
-      if (gate.kind === "pending-confirm" || gate.kind === "dry-run") {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: gateToMcpBody(gate, {
-                channel: args.channel.replace(/^#/, "").trim(),
-              }),
-            },
-          ],
-        };
-      }
+        relays: args.relays,
 
-      // 3. POST to the relay with a 5s timeout (race the signedFetch).
-      const resp = await signedFetchWithTimeout(
-        secret,
-        {
-          method: "POST",
-          url: `${relayUrl.replace(/\/$/, "")}/events`,
-          body: JSON.stringify(event),
-          headers: { "content-type": "application/json" },
+        allowFanout: args.allowFanout,
+
+        preview: "buzz_post_message",
+
+        tool: "buzz_post_message",
+        responseExtras: {
+          channel: args.channel.replace(/^#/, "").trim(),
         },
-        TOOL_TIMEOUT_MS,
-        cfAccess,
-        { stats: extras?.stats, tool: "buzz_post_message" },
-      ).catch((err: Error) => {
-        throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
       });
 
-      // 4. Parse + extract. 2xx = accepted.
-      if (resp.status < 200 || resp.status >= 300) {
+      if (isError) {
         throw new Error(
-          `relay rejected event: HTTP ${resp.status} — ${resp.bodyText.slice(0, 500)}`,
+          "MCP is in read-only mode (BUZZ_MCP_MODE=read-only). Set BUZZ_MCP_MODE=mutate or BUZZ_MCP_MODE=mutate-with-confirm to enable writes.",
         );
       }
-
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(resp.bodyText);
-      } catch {
-        parsed = null;
-      }
-      const eventId = extractEventId(parsed);
-      const channelName = args.channel.replace(/^#/, "").trim();
-
-      if (eventId !== null) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(
-                { event_id: eventId, accepted: true, channel: channelName },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
-      }
-
-      // Relay returned 2xx but no recognizable id — surface the raw body.
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                accepted: true,
-                channel: channelName,
-                raw: parsed ?? resp.bodyText.slice(0, 1000),
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
+      return poolWriteToMcpContent(mcpBody, isError);
     },
   );
 }
@@ -231,10 +168,11 @@ export function registerPostMessageTool(
 export function registerEditMessageTool(
   server: McpServer,
   secret: NsecOrHex,
-  relayUrl: string,
-  cfAccess?: CfAccess,
+  _relayUrl: string,
+  _cfAccess?: CfAccess,
   config?: BuzzConfig,
-  extras?: SignedFetchWithTimeoutExtras,
+  _extras?: SignedFetchWithTimeoutExtras,
+  pool?: RelayPool,
 ): void {
   server.tool(
     "buzz_edit_message",
@@ -266,6 +204,20 @@ export function registerEditMessageTool(
           "Required when BUZZ_MCP_MODE=mutate-with-confirm. Re-call with " +
             "confirm: true to actually publish the pending event.",
         ),
+      relays: z
+        .array(z.string().url())
+        .optional()
+        .describe(
+          "Optional per-call relay list (overrides the pool default). " +
+            "Use this to force a write to a specific relay.",
+        ),
+      allowFanout: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true (default), the write is fanned out to all configured relays. " +
+            "Set to false to write only to the default relay.",
+        ),
     },
     async (args) => {
       const byteLen = new TextEncoder().encode(args.content).byteLength;
@@ -280,68 +232,28 @@ export function registerEditMessageTool(
         originalKind: args.originalKind,
       });
 
-      const gate = gateWrite({
+      // Phase 3: fan-out across configured relays via the pool.
+
+      const { mcpBody, isError } = await poolWrite(pool, event, {
         mode: config?.mode ?? "mutate",
+
         confirm: args.confirm,
+
         dryRun: args.dryRun,
-        unsigned: event,
-        preview: `edit_message target=${args.eventId} bytes=${byteLen}`,
-      });
 
-      if (gate.kind === "read-only") {
-        throw new Error(gate.message);
-      }
-      if (gate.kind === "pending-confirm" || gate.kind === "dry-run") {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: gateToMcpBody(gate, {
-                target: args.eventId,
-              }),
-            },
-          ],
-        };
-      }
+        relays: args.relays,
 
-      const resp = await signedFetchWithTimeout(
-        secret,
-        {
-          method: "POST",
-          url: `${relayUrl.replace(/\/$/, "")}/events`,
-          body: JSON.stringify(event),
-          headers: { "content-type": "application/json" },
+        allowFanout: args.allowFanout,
+
+        preview: "buzz_edit_message",
+
+        tool: "buzz_edit_message",
+        responseExtras: {
+          target: args.eventId,
         },
-        TOOL_TIMEOUT_MS,
-        cfAccess,
-        { stats: extras?.stats, tool: "buzz_edit_message" },
-      ).catch((err: Error) => {
-        throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
       });
 
-      if (resp.status < 200 || resp.status >= 300) {
-        throw new Error(
-          `relay rejected event: HTTP ${resp.status} — ${resp.bodyText.slice(0, 500)}`,
-        );
-      }
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                event_id: event.id,
-                accepted: true,
-                target: args.eventId,
-                new_content: args.content,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
+      return poolWriteToMcpContent(mcpBody, isError);
     },
   );
 }
@@ -354,10 +266,11 @@ export function registerEditMessageTool(
 export function registerReactTool(
   server: McpServer,
   secret: NsecOrHex,
-  relayUrl: string,
-  cfAccess?: CfAccess,
+  _relayUrl: string,
+  _cfAccess?: CfAccess,
   config?: BuzzConfig,
-  extras?: SignedFetchWithTimeoutExtras,
+  _extras?: SignedFetchWithTimeoutExtras,
+  pool?: RelayPool,
 ): void {
   server.tool(
     "buzz_react",
@@ -380,6 +293,20 @@ export function registerReactTool(
           "Required when BUZZ_MCP_MODE=mutate-with-confirm. Re-call with " +
             "confirm: true to actually publish the pending event.",
         ),
+      relays: z
+        .array(z.string().url())
+        .optional()
+        .describe(
+          "Optional per-call relay list (overrides the pool default). " +
+            "Use this to force a write to a specific relay.",
+        ),
+      allowFanout: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true (default), the write is fanned out to all configured relays. " +
+            "Set to false to write only to the default relay.",
+        ),
     },
     async (args) => {
       const event = await buildReaction({
@@ -388,69 +315,29 @@ export function registerReactTool(
         emoji: args.emoji,
       });
 
-      const gate = gateWrite({
+      // Phase 3: fan-out across configured relays via the pool.
+
+      const { mcpBody, isError } = await poolWrite(pool, event, {
         mode: config?.mode ?? "mutate",
+
         confirm: args.confirm,
+
         dryRun: args.dryRun,
-        unsigned: event,
-        preview: `react target=${args.eventId} emoji=${args.emoji}`,
-      });
 
-      if (gate.kind === "read-only") {
-        throw new Error(gate.message);
-      }
-      if (gate.kind === "pending-confirm" || gate.kind === "dry-run") {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: gateToMcpBody(gate, {
-                target: args.eventId,
-                emoji: args.emoji,
-              }),
-            },
-          ],
-        };
-      }
+        relays: args.relays,
 
-      const resp = await signedFetchWithTimeout(
-        secret,
-        {
-          method: "POST",
-          url: `${relayUrl.replace(/\/$/, "")}/events`,
-          body: JSON.stringify(event),
-          headers: { "content-type": "application/json" },
+        allowFanout: args.allowFanout,
+
+        preview: "buzz_react",
+
+        tool: "buzz_react",
+        responseExtras: {
+          emoji: args.emoji,
+          target: args.eventId,
         },
-        TOOL_TIMEOUT_MS,
-        cfAccess,
-        { stats: extras?.stats, tool: "buzz_react" },
-      ).catch((err: Error) => {
-        throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
       });
 
-      if (resp.status < 200 || resp.status >= 300) {
-        throw new Error(
-          `relay rejected event: HTTP ${resp.status} — ${resp.bodyText.slice(0, 500)}`,
-        );
-      }
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                event_id: event.id,
-                accepted: true,
-                target: args.eventId,
-                emoji: args.emoji,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
+      return poolWriteToMcpContent(mcpBody, isError);
     },
   );
 }

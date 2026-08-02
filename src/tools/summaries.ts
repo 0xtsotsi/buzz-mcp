@@ -8,18 +8,17 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { SignedFetchResult } from "../relay/client.js";
-import { signedFetch } from "../relay/client.js";
 import { buildThreadSummary } from "../relay/event-builder.js";
+import type { RelayPool } from "../relay/pool.js";
 import type { NsecOrHex } from "../relay/signer.js";
-import { outcomeFromStatus } from "../relay/stats.js";
 import type { CfAccess, SignedFetchWithTimeoutExtras } from "../util/relay-call.js";
+import { poolWrite, poolWriteToMcpContent } from "./pool-write.js";
 
-const RELAY_BODY_PRINT_LIMIT = 1_000;
-const TOOL_TIMEOUT_MS = 5_000;
+const _RELAY_BODY_PRINT_LIMIT = 1_000;
+const _TOOL_TIMEOUT_MS = 5_000;
 const MAX_SUMMARY_BYTES = 32 * 1024;
 
-async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+async function _withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), ms);
   try {
@@ -43,9 +42,10 @@ async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise
 export function registerPostThreadSummaryTool(
   server: McpServer,
   secret: NsecOrHex,
-  relayUrl: string,
-  cfAccess?: CfAccess,
-  extras?: SignedFetchWithTimeoutExtras,
+  _relayUrl: string,
+  _cfAccess?: CfAccess,
+  _extras?: SignedFetchWithTimeoutExtras,
+  pool?: RelayPool,
 ): void {
   server.tool(
     "buzz_post_thread_summary",
@@ -62,6 +62,20 @@ export function registerPostThreadSummaryTool(
         .min(1)
         .max(MAX_SUMMARY_BYTES)
         .describe(`Summary text. Required. Hard cap ${MAX_SUMMARY_BYTES} bytes (32 KB).`),
+      relays: z
+        .array(z.string().url())
+        .optional()
+        .describe(
+          "Optional per-call relay list (overrides the pool default). " +
+            "Use this to force a write to a specific relay.",
+        ),
+      allowFanout: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true (default), the write is fanned out to all configured relays. " +
+            "Set to false to write only to the default relay.",
+        ),
     },
     async (args) => {
       const byteLen = new TextEncoder().encode(args.summary).byteLength;
@@ -75,61 +89,15 @@ export function registerPostThreadSummaryTool(
         summary: args.summary,
       });
 
-      let resp: SignedFetchResult;
-      const start = Date.now();
-      try {
-        const headers: Record<string, string> = { "content-type": "application/json" };
-        if (cfAccess !== undefined) {
-          headers["CF-Access-Client-Id"] = cfAccess.clientId;
-          headers["CF-Access-Client-Secret"] = cfAccess.clientSecret;
-        }
-        resp = await withTimeout(
-          signedFetch(secret, {
-            method: "POST",
-            url: `${relayUrl.replace(/\/$/, "")}/events`,
-            body: JSON.stringify(event),
-            headers,
-          }),
-          TOOL_TIMEOUT_MS,
-          "post thread summary",
-        );
-      } catch (err) {
-        const latencyMs = Date.now() - start;
-        if (extras?.stats !== undefined) {
-          extras.stats.record(`${relayUrl}/events`, "network_error", latencyMs);
-        }
-        throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
-      }
-      if (extras?.stats !== undefined) {
-        extras.stats.record(
-          `${relayUrl}/events`,
-          outcomeFromStatus(resp.status),
-          Date.now() - start,
-        );
-      }
-
-      if (resp.status < 200 || resp.status >= 300) {
-        throw new Error(
-          `relay rejected event: HTTP ${resp.status} — ${resp.bodyText.slice(0, RELAY_BODY_PRINT_LIMIT)}`,
-        );
-      }
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                event_id: event.id,
-                accepted: true,
-                thread: args.rootEventId,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
+      const { mcpBody, isError } = await poolWrite(pool, event, {
+        mode: "mutate",
+        preview: "buzz_post_thread_summary",
+        tool: "buzz_post_thread_summary",
+        responseExtras: {
+          thread: args.rootEventId,
+        },
+      });
+      return poolWriteToMcpContent(mcpBody, isError);
     },
   );
 }

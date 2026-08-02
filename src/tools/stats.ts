@@ -28,6 +28,20 @@ export function registerGetStatsTool(server: McpServer, store: StatsStore): void
         .describe(
           "If set, return the stats for only this relay. Otherwise return all known relays.",
         ),
+      relays: z
+        .array(z.string().url())
+        .optional()
+        .describe(
+          "Optional per-call relay list (overrides the pool default). " +
+            "Use this to force a write to a specific relay.",
+        ),
+      allowFanout: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true (default), the write is fanned out to all configured relays. " +
+            "Set to false to write only to the default relay.",
+        ),
     },
     async (args) => {
       const relay = args.relay;
