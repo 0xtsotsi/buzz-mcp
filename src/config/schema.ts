@@ -55,6 +55,7 @@ export const DEFAULT_MODE = "mutate-with-confirm" as const;
  */
 export const ModeSchema = z.enum(["read-only", "mutate-with-confirm", "mutate"]);
 export type Mode = z.infer<typeof ModeSchema>;
+export type LogLevelEnum = "debug" | "info" | "warn" | "error";
 
 /**
  * The full env schema. Throws on parse.
@@ -116,7 +117,7 @@ export const EnvSchema = z.object({
     .positive()
     .default(DEFAULT_CHANNEL_CACHE_TTL_MS),
   BUZZ_MCP_MODE: ModeSchema.default(DEFAULT_MODE),
-  BUZZ_MCP_LOG: z.string().default("info"),
+  BUZZ_MCP_LOG: z.enum(["debug", "info", "warn", "error"]).default("info"),
   BUZZ_MCP_LOG_FILE: z.string().optional(),
   BUZZ_RELAY_HOST_0: z.string().optional(),
   BUZZ_RELAY_HOST_1: z.string().optional(),
@@ -152,7 +153,7 @@ export type ParsedEnv = z.infer<typeof EnvSchema>;
 export interface BuzzConfig {
   readonly secret: string;
   readonly mode: Mode;
-  readonly logLevel: string;
+  readonly logLevel: LogLevelEnum;
   readonly logFile: string | undefined;
   readonly channelCacheTtlMs: number;
   /** Every relay URL the operator can reach (merged from URL + URLS). */

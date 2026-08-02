@@ -20,6 +20,7 @@ import type { BuzzConfig } from "../config/schema.js";
 import { buildEdit, buildMessage, buildReaction, type ImetaEntry } from "../relay/event-builder.js";
 import type { NsecOrHex } from "../relay/signer.js";
 import { gateToMcpBody, gateWrite } from "../util/mode.js";
+import type { SignedFetchWithTimeoutExtras } from "../util/relay-call.js";
 import { type CfAccess, signedFetchWithTimeout } from "../util/relay-call.js";
 
 /** Hard cap on a single message body, in bytes (UTF-8). */
@@ -56,6 +57,7 @@ export function registerPostMessageTool(
   relayUrl: string,
   cfAccess?: CfAccess,
   config?: BuzzConfig,
+  extras?: SignedFetchWithTimeoutExtras,
 ): void {
   // Note: AbortController-based timeout is wired around the signedFetch call
   // below; signedFetch itself does not accept a signal, so we race it.
@@ -158,6 +160,7 @@ export function registerPostMessageTool(
         },
         TOOL_TIMEOUT_MS,
         cfAccess,
+        { stats: extras?.stats, tool: "buzz_post_message" },
       ).catch((err: Error) => {
         throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
       });
@@ -231,6 +234,7 @@ export function registerEditMessageTool(
   relayUrl: string,
   cfAccess?: CfAccess,
   config?: BuzzConfig,
+  extras?: SignedFetchWithTimeoutExtras,
 ): void {
   server.tool(
     "buzz_edit_message",
@@ -310,6 +314,7 @@ export function registerEditMessageTool(
         },
         TOOL_TIMEOUT_MS,
         cfAccess,
+        { stats: extras?.stats, tool: "buzz_edit_message" },
       ).catch((err: Error) => {
         throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
       });
@@ -352,6 +357,7 @@ export function registerReactTool(
   relayUrl: string,
   cfAccess?: CfAccess,
   config?: BuzzConfig,
+  extras?: SignedFetchWithTimeoutExtras,
 ): void {
   server.tool(
     "buzz_react",
@@ -417,6 +423,7 @@ export function registerReactTool(
         },
         TOOL_TIMEOUT_MS,
         cfAccess,
+        { stats: extras?.stats, tool: "buzz_react" },
       ).catch((err: Error) => {
         throw new Error(`relay at ${relayUrl} did not respond: ${err.message}`);
       });

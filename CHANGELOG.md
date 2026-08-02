@@ -3,7 +3,60 @@
 All notable changes to `@buzz/mcp` are documented in this file. The format
 loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased] — Phase 1 (multi-relay plan)
+## [Unreleased] — Phase 2 (multi-relay plan)
+
+Adds observability. One new MCP tool (`buzz_get_stats`); the existing 16
+tools now emit structured logs and have their outcomes recorded into a
+per-relay stats store. Phase 3's `RelayPool` will pass the same store
+across all relays.
+
+### Added
+
+- **`src/util/log.ts` — structured JSON logger.** Every emitted line is a
+  single-line JSON object `{ ts, level, msg, ... }`. Two sinks, both
+  configurable at `createServer()` time:
+  - Stderr (always on). The default destination for the MCP transport.
+  - An optional file sink (size-based rotation: 5 MB × 3 files). Set
+    `BUZZ_MCP_LOG_FILE` to enable; the default path under Buzz.app is
+    `~/Library/Logs/xyz.block.buzz.app/agents/<pid>/buzz-mcp.log`.
+- **`src/relay/stats.ts` — `StatsStore` + `RelayStats`.** Per-relay stats
+  (`calls_total`, `success`, `rejected_400..403`, `rejected_other`,
+  `timeout`, `network_error`, `latency_p50_ms`, `latency_p95_ms`,
+  `last_success_at`, `last_error_at`). One record per origin (scheme +
+  host + port), so `https://x.test/events` and `https://x.test/query`
+  merge. Latency is a fixed-size ring buffer (200 samples) — constant
+  memory per relay.
+- **`buzz_get_stats` MCP tool.** Returns the snapshot. Accepts optional
+  `relay` URL to filter to one relay. Read-only, never gated by
+  `BUZZ_MCP_MODE`.
+- **`scripts/relay-health-check.sh`** — bash probe that checks each
+  configured relay (NIP-11 + `/query` canary) and emits one JSON
+  status line per relay. Exits non-zero on any unreachable relay.
+  Designed for cron + launchd: `*/15 * * * * ~/Documents/projects/CorePrt/scripts/relay-health-check.sh >> ~/Library/Logs/relay-health.log 2>&1`.
+- **`BUZZ_MCP_LOG` (enum: `debug|info|warn|error`)** now controls the
+  log level. Default `info`. Phase 2 switches the schema from `string`
+  to a strict enum.
+
+### Changed
+
+- `signedFetchWithTimeout` now accepts `extras: { stats, tool }`. When
+  `stats` is provided, every call records its outcome into the
+  `StatsStore`. When `tool` is provided, the log line carries the tool
+  name. The change is backward-compatible — existing callers omit the
+  5th argument and get the old behavior.
+- `createServer()` instantiates a single `StatsStore` and a single
+  `Logger`, and threads them through every write tool.
+
+### Test summary
+
+`Test Files  20 passed (20)`
+`Tests  182 passed (182)` (38 new tests in Phase 2)
+
+Bumps version to 0.1.4.
+
+## [0.1.3] — 2026-08-02 (Phase 1)
+
+Configuration discipline + dry-run safety. PR #11.
 
 Adds configuration discipline + dry-run safety. No new MCP tools — the
 existing 16 tools gain mode-aware behavior. Phase 3 (multi-relay `RelayPool`)

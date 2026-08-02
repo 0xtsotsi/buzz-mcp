@@ -11,6 +11,7 @@ import { z } from "zod";
 import type { SignedFetchResult } from "../relay/client.js";
 import { buildJob, buildWorkflowApproval } from "../relay/event-builder.js";
 import type { NsecOrHex } from "../relay/signer.js";
+import type { SignedFetchWithTimeoutExtras } from "../util/relay-call.js";
 import { type CfAccess, signedFetchWithTimeout } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
@@ -31,6 +32,7 @@ export function registerCreateJobTool(
   secret: NsecOrHex,
   relayUrl: string,
   cfAccess?: CfAccess,
+  extras?: SignedFetchWithTimeoutExtras,
 ): void {
   server.tool(
     "buzz_create_job",
@@ -67,7 +69,10 @@ export function registerCreateJobTool(
             headers: { "content-type": "application/json" },
           },
           TOOL_TIMEOUT_MS,
+
           cfAccess,
+
+          { stats: extras?.stats, tool: "buzz_create_job" },
         );
       } catch (err) {
         throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
@@ -121,6 +126,7 @@ export function registerApproveWorkflowTool(
   secret: NsecOrHex,
   relayUrl: string,
   cfAccess?: CfAccess,
+  extras?: SignedFetchWithTimeoutExtras,
 ): void {
   server.tool(
     "buzz_approve_workflow",
@@ -160,7 +166,10 @@ export function registerApproveWorkflowTool(
             headers: { "content-type": "application/json" },
           },
           TOOL_TIMEOUT_MS,
+
           cfAccess,
+
+          { stats: extras?.stats, tool: "buzz_approve_workflow" },
         );
       } catch (err) {
         throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);

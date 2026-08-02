@@ -12,7 +12,8 @@ import type { SignedFetchResult } from "../relay/client.js";
 import { signedFetch } from "../relay/client.js";
 import { buildThreadSummary } from "../relay/event-builder.js";
 import type { NsecOrHex } from "../relay/signer.js";
-import type { CfAccess } from "../util/relay-call.js";
+import { outcomeFromStatus } from "../relay/stats.js";
+import type { CfAccess, SignedFetchWithTimeoutExtras } from "../util/relay-call.js";
 
 const RELAY_BODY_PRINT_LIMIT = 1_000;
 const TOOL_TIMEOUT_MS = 5_000;
@@ -44,6 +45,7 @@ export function registerPostThreadSummaryTool(
   secret: NsecOrHex,
   relayUrl: string,
   cfAccess?: CfAccess,
+  extras?: SignedFetchWithTimeoutExtras,
 ): void {
   server.tool(
     "buzz_post_thread_summary",
@@ -74,6 +76,7 @@ export function registerPostThreadSummaryTool(
       });
 
       let resp: SignedFetchResult;
+      const start = Date.now();
       try {
         const headers: Record<string, string> = { "content-type": "application/json" };
         if (cfAccess !== undefined) {
@@ -91,7 +94,18 @@ export function registerPostThreadSummaryTool(
           "post thread summary",
         );
       } catch (err) {
+        const latencyMs = Date.now() - start;
+        if (extras?.stats !== undefined) {
+          extras.stats.record(`${relayUrl}/events`, "network_error", latencyMs);
+        }
         throw new Error(`relay at ${relayUrl} did not respond: ${(err as Error).message}`);
+      }
+      if (extras?.stats !== undefined) {
+        extras.stats.record(
+          `${relayUrl}/events`,
+          outcomeFromStatus(resp.status),
+          Date.now() - start,
+        );
       }
 
       if (resp.status < 200 || resp.status >= 300) {

@@ -19,6 +19,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type BuzzConfig, parseEnv } from "./config/schema.js";
 import type { NsecOrHex } from "./relay/signer.js";
+import { StatsStore } from "./relay/stats.js";
 import { SubscriptionManager } from "./relay/subscription.js";
 import { registerFetchEventsTool, registerSearchTool } from "./tools/fetch.js";
 import {
@@ -34,16 +35,18 @@ import {
   registerPostMessageTool,
   registerReactTool,
 } from "./tools/messages.js";
+import { registerGetStatsTool } from "./tools/stats.js";
 import {
   registerPollTool,
   registerSubscribeTool,
   registerUnsubscribeTool,
 } from "./tools/subscribe.js";
 import { registerPostThreadSummaryTool } from "./tools/summaries.js";
+import { createLogger, setLogger } from "./util/log.js";
 import type { CfAccess } from "./util/relay-call.js";
 
 const SERVER_NAME = "@buzz/mcp";
-const SERVER_VERSION = "0.1.3";
+const SERVER_VERSION = "0.1.4";
 
 /**
  * All 16 tool names registered by this build, in alphabetical order. Kept
@@ -61,6 +64,7 @@ export const REGISTERED_TOOLS: string[] = [
   "buzz_create_channel",
   "buzz_create_job",
   "buzz_edit_message",
+  "buzz_get_stats",
   "buzz_fetch_events",
   "buzz_identity",
   "buzz_list_channels",
@@ -141,6 +145,21 @@ export function createServer(): McpServer {
   const relayUrl = config.defaultRelay;
   const cfAccess: CfAccess | undefined = config.cfAccess;
 
+  // Phase 2: structured logging. The file sink is opt-in via
+  // BUZZ_MCP_LOG_FILE. The default path under Buzz.app is opt-in too, via
+  // the `BuzzConfig.logFile` field (Phase 2's schema pins it explicitly).
+  const logFile = config.logFile;
+  const logger = createLogger({
+    level: config.logLevel,
+    file: logFile,
+    defaultContext: { server: SERVER_NAME, version: SERVER_VERSION },
+  });
+  setLogger(logger);
+
+  // Phase 2: per-relay stats. A single StatsStore is shared by every
+  // signed fetch (and Phase 3's RelayPool). The store is process-local.
+  const stats = new StatsStore(logger);
+
   const subs = new SubscriptionManager(secret, relayUrl);
 
   const server = new McpServer(
@@ -151,22 +170,29 @@ export function createServer(): McpServer {
     },
   );
 
-  registerPostMessageTool(server, secret, relayUrl, cfAccess, config);
-  registerEditMessageTool(server, secret, relayUrl, cfAccess, config);
-  registerReactTool(server, secret, relayUrl, cfAccess, config);
+  registerPostMessageTool(server, secret, relayUrl, cfAccess, config, { stats });
+  registerEditMessageTool(server, secret, relayUrl, cfAccess, config, { stats });
+  registerReactTool(server, secret, relayUrl, cfAccess, config, { stats });
   registerIdentityTool(server, secret, relayUrl, cfAccess);
   registerListChannelsTool(server, secret, relayUrl, cfAccess);
-  registerCreateChannelTool(server, secret, relayUrl, cfAccess, config);
-  registerAddMemberTool(server, secret, relayUrl, cfAccess, config);
+  registerCreateChannelTool(server, secret, relayUrl, cfAccess, config, { stats });
+  registerAddMemberTool(server, secret, relayUrl, cfAccess, config, { stats });
   registerFetchEventsTool(server, secret, relayUrl, cfAccess);
   registerSearchTool(server, secret, relayUrl, cfAccess);
-  registerCreateJobTool(server, secret, relayUrl, cfAccess);
-  registerApproveWorkflowTool(server, secret, relayUrl, cfAccess);
-  registerUploadMediaTool(server, secret, relayUrl, cfAccess);
-  registerPostThreadSummaryTool(server, secret, relayUrl, cfAccess);
+  registerCreateJobTool(server, secret, relayUrl, cfAccess, { stats });
+  registerApproveWorkflowTool(server, secret, relayUrl, cfAccess, { stats });
+  registerUploadMediaTool(server, secret, relayUrl, cfAccess, { stats });
+  registerPostThreadSummaryTool(server, secret, relayUrl, cfAccess, { stats });
   registerSubscribeTool(server, subs, cfAccess);
   registerUnsubscribeTool(server, subs, cfAccess);
   registerPollTool(server, subs, cfAccess);
+  registerGetStatsTool(server, stats);
+
+  logger.info("server.start", {
+    relay: relayUrl,
+    relays: config.relays.length,
+    mode: config.mode,
+  });
 
   return server;
 }
