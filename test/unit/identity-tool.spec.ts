@@ -183,7 +183,7 @@ describe("buzz_list_channels", () => {
       kind: 9007,
       tags: [
         ["name", "general"],
-        ["visibility", "public"],
+        ["visibility", "open"],
       ],
       content: "",
       sig: "b".repeat(128),
@@ -214,7 +214,7 @@ describe("buzz_list_channels", () => {
     expect(parsed.channels).toHaveLength(1);
     expect(parsed.channels[0].id).toBe("a".repeat(64));
     expect(parsed.channels[0].name).toBe("general");
-    expect(parsed.channels[0].visibility).toBe("public");
+    expect(parsed.channels[0].visibility).toBe("open");
 
     await client.close();
   });
