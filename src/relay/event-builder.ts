@@ -438,18 +438,18 @@ export async function buildReaction(opts: BuildReactionOptions): Promise<NostrEv
 /**
  * Build a kind:9007 NIP-29 `create_channel` event.
  *
- * Tags emitted:
+ * Tags emitted (in this order):
  *   - `["client", "buzz-mcp"]`
  *   - `["t", "euc"]`
+ *   - `["h", <channel-uuid>]` — UUIDv5 derived from the channel name by
+ *     default; the operator can override via `opts.channelId` with a
+ *     relay-allocated UUID. The Rust SDK's `build_create_channel`
+ *     (`CorePrt-relay/crates/buzz-sdk/src/builders.rs:674`) requires this
+ *     `h` tag; prior versions of buzz-mcp omitted it and the relay
+ *     silently filed the channel under "no channel".
  *   - `["name", <name>]`
  *   - `["visibility", "public"|"private"]` (always — defaults to "public")
  *   - `["about", <description>]` (only when `description` is provided)
- *
- * TODO: the Rust SDK's `build_create_channel` (`CorePrt-relay/crates/buzz-sdk/src/builders.rs:674`)
- * requires a pre-generated `channel_id: Uuid` for the `["h", <uuid>]` tag. We
- * intentionally omit the `h` tag in v1 because the agent doesn't yet know the
- * relay-allocated channel UUID; the relay should allocate one on ingest. If
- * the relay rejects this shape we'll switch to a client-generated v4 UUID.
  */
 export async function buildCreateChannel(opts: BuildCreateChannelOptions): Promise<NostrEvent> {
   const channelUuid = opts.channelId ?? channelNameToUuid(opts.name);
@@ -475,18 +475,18 @@ export async function buildCreateChannel(opts: BuildCreateChannelOptions): Promi
 /**
  * Build a kind:9000 NIP-29 `add_member` event.
  *
- * Tags emitted:
+ * Tags emitted (in this order):
  *   - `["client", "buzz-mcp"]`
  *   - `["t", "euc"]`
+ *   - `["h", <channel-uuid>]` — REQUIRED. The relay routes by `h`, not by
+ *     name; prior versions of buzz-mcp omitted this tag and the relay
+ *     silently rejected or misrouted the event. The Rust SDK's
+ *     `build_add_member` (`CorePrt-relay/crates/buzz-sdk/src/builders.rs:565`)
+ *     requires a pre-generated `channel_id: Uuid`. Use
+ *     `channelNameToUuid(name)` if you only have the name, or pass the
+ *     canonical UUID from `buzz_list_channels`.
  *   - `["p", <pubkey>]` — NIP-29 required
  *   - `["role", "admin"|"member"]` (only when `role` is provided)
- *
- * TODO: the Rust SDK's `build_add_member` (`CorePrt-relay/crates/buzz-sdk/src/builders.rs:565`)
- * requires a `channel_id: Uuid` for the `["h", <uuid>]` tag. We intentionally
- * omit the `h` tag in v1 because the agent doesn't yet know the
- * relay-allocated channel UUID. If the relay rejects this shape we'll switch
- * to passing the channel UUID from the corresponding `buzz_create_channel`
- * response.
  *
  * NOTE (CLAUDE.md / `CorePrt/run.sh:120`): real back-to-back add-member calls
  * must be `sleep 1` apart. The MCP tool surfaces this in its description; the
