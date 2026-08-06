@@ -38,7 +38,7 @@ describe("buildMessage", () => {
     expect(typeof evt.created_at).toBe("number");
   });
 
-  it("emits client + euc + subject tags", async () => {
+  it("emits client + euc + h + subject tags (PR-7 wire shape)", async () => {
     const evt = await buildMessage({
       secret: SECRET,
       channel: "general",
@@ -47,6 +47,24 @@ describe("buildMessage", () => {
     expect(findTag(evt, "client")).toEqual(["client", "buzz-mcp"]);
     expect(findTag(evt, "t")).toEqual(["t", "euc"]);
     expect(findTag(evt, "subject")).toEqual(["subject", "general"]);
+    // PR-7: emit ["h", <uuid>] so the relay's channel router files the
+    // event. The UUID is derived deterministically from the channel name
+    // when no channelId is passed.
+    const hTag = findTag(evt, "h");
+    expect(hTag).toBeDefined();
+    expect(hTag![0]).toBe("h");
+    expect(hTag![1]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
+  it("uses caller-provided channelId when given (preferred over derive)", async () => {
+    const provided = "12345678-1234-5678-1234-567812345678";
+    const evt = await buildMessage({
+      secret: SECRET,
+      channel: "general",
+      channelId: provided,
+      content: "hi",
+    });
+    expect(findTag(evt, "h")).toEqual(["h", provided]);
   });
 
   it("strips a leading '#' from the channel name", async () => {
