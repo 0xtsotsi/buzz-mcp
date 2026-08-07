@@ -17,7 +17,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { BuzzConfig } from "../config/schema.js";
-import { buildEdit, buildMessage, buildReaction, type ImetaEntry } from "../relay/event-builder.js";
+import { buildEdit, buildMessage, buildReaction, channelNameToUuid, type ImetaEntry } from "../relay/event-builder.js";
 import type { RelayPool } from "../relay/pool.js";
 import type { NsecOrHex } from "../relay/signer.js";
 import type { CfAccess, SignedFetchWithTimeoutExtras } from "../util/relay-call.js";
@@ -106,6 +106,15 @@ export function registerPostMessageTool(
           "When true (default), the write is fanned out to all configured relays. " +
             "Set to false to write only to the default relay.",
         ),
+      persona: z
+        .string()
+        .min(1)
+        .max(32)
+        .optional()
+        .describe(
+          "Sign as the named persona (declared in BUZZ_PERSONAS, or `primary`). " +
+            "When omitted, the call uses the operator's default key.",
+        ),
     },
     async (args) => {
       // 1. Byte-length guard (the relay's max_plaintext_len is 32768).
@@ -114,10 +123,55 @@ export function registerPostMessageTool(
         throw new Error(`content is ${bytes} bytes, exceeds ${MAX_CONTENT_BYTES}-byte cap`);
       }
 
-      // 2. Build the event (signs locally with the captured secret).
+      // 1b. Resolve persona (if any). `config` is required for the persona
+      //     registry; we accept the lack of it and fall back to the captured
+      //     `secret` so existing call sites that don't pass a config still work.
+      const personaName = args.persona;
+      let signingKey: NsecOrHex = secret;
+      let personaResolved: string | undefined;
+      if (personaName !== undefined && config !== undefined) {
+        const persona = config.personas.resolve(personaName);
+        signingKey = persona.key;
+        personaResolved = persona.name;
+      } else if (personaName !== undefined) {
+        throw new Error(
+          `persona "${personaName}" requested but no persona registry is configured. ` +
+            `Set BUZZ_PERSONAS or omit the persona argument.`,
+        );
+      }
+
+      // 2. Build the event (signs locally with the persona key, or the
+      //    captured default).
+      //
+      // Channel UUID resolution: prefer the pool's resolveChannel() so we
+      // emit the same `h` the relay already knows about (in case the
+      // channel was created with a different UUIDv5 namespace, or the
+      // operator hand-allocated one). Fall back to a deterministic
+      // UUIDv5 derived from the channel name — stable, but may diverge
+      // from the relay's record. The fallback path warns on stderr.
+      let channelId: string | undefined;
+      if (pool !== undefined) {
+        try {
+          const resolved = await pool.resolveChannel(args.channel);
+          const first = resolved.byRelay.values().next().value;
+          if (typeof first === "string") {
+            channelId = first;
+          } else if (resolved.missing.length > 0) {
+            process.stderr.write(
+              `[buzz-mcp] channel "${args.channel}" not found on any relay; using deterministic UUIDv5. ` +
+                `Run buzz_list_channels to populate the cache.\n`,
+            );
+          }
+        } catch (err) {
+          process.stderr.write(
+            `[buzz-mcp] resolveChannel failed for "${args.channel}": ${(err as Error).message}; using deterministic UUIDv5\n`,
+          );
+        }
+      }
       const event = await buildMessage({
-        secret,
+        secret: signingKey,
         channel: args.channel,
+        channelId,
         content: args.content,
         replyTo: args.replyTo,
         imeta: args.imeta as ImetaEntry[] | undefined,
@@ -141,6 +195,7 @@ export function registerPostMessageTool(
         tool: "buzz_post_message",
         responseExtras: {
           channel: args.channel.replace(/^#/, "").trim(),
+          persona: personaResolved,
         },
       });
 

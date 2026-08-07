@@ -15,7 +15,7 @@ import { npubEncode } from "nostr-tools/nip19";
 import { z } from "zod";
 import type { BuzzConfig } from "../config/schema.js";
 import type { SignedFetchResult } from "../relay/client.js";
-import { buildAddMember, buildCreateChannel } from "../relay/event-builder.js";
+import { buildAddMember, buildCreateChannel, channelNameToUuid } from "../relay/event-builder.js";
 import { getPublicKey, type NostrEvent, type NsecOrHex } from "../relay/signer.js";
 import { gateToMcpBody, gateWrite } from "../util/mode.js";
 import type { SignedFetchWithTimeoutExtras } from "../util/relay-call.js";
@@ -226,6 +226,17 @@ export function registerCreateChannelTool(
       "accepts dryRun: true to inspect the signed event without posting.",
     {
       name: z.string().min(1).max(64).describe("Channel name (NIP-29). Required."),
+      channelId: z
+        .string()
+        .uuid()
+        .optional()
+        .describe(
+          "Pre-allocated channel UUID from the relay. When omitted, a " +
+            "deterministic UUIDv5 is derived from `name`. The relay may " +
+            "reject the deterministic form if it allocated a different " +
+            "UUID; in that case look up the canonical UUID via " +
+            "buzz_list_channels and pass it back here.",
+        ),
       visibility: z
         .enum(["public", "private"])
         .optional()
@@ -252,9 +263,16 @@ export function registerCreateChannelTool(
         ),
     },
     async (args) => {
+      // Use the deterministic UUIDv5 as a placeholder; the relay will
+      // allocate the canonical UUID on ingest. If the tool layer has a
+      // cached `channelId` from a prior `buzz_list_channels` call, it
+      // would override here — for v1 we don't expose channelId on the
+      // create_channel schema since the operator's intent is "make a
+      // new channel", not "register a specific UUID".
       const event = await buildCreateChannel({
         secret,
         name: args.name,
+        channelId: channelNameToUuid(args.name),
         visibility: args.visibility,
         description: args.description,
       });
@@ -362,6 +380,24 @@ export function registerAddMemberTool(
         .string()
         .regex(/^[0-9a-f]{64}$/, "must be 64 lowercase hex characters")
         .describe("Pubkey (hex) of the member to add. Required."),
+      channelId: z
+        .string()
+        .uuid()
+        .describe(
+          "Channel UUID this membership applies to. Required — the relay " +
+            "routes by `h`, not by name. Use `channelNameToUuid(name)` " +
+            "if you only have the name, or pass the canonical UUID from " +
+            "`buzz_list_channels`.",
+        ),
+      channel: z
+        .string()
+        .min(1)
+        .max(64)
+        .optional()
+        .describe(
+          "Channel name (alternative to `channelId`; we derive the UUID " +
+            "deterministically). Prefer `channelId` for canonical lookups.",
+        ),
       role: z.enum(["admin", "member"]).optional().describe('Member role (default "member").'),
       dryRun: z
         .boolean()
@@ -376,9 +412,19 @@ export function registerAddMemberTool(
         ),
     },
     async (args) => {
+      // The relay routes add_member by `h`, so we need the channel UUID.
+      // For v1 we accept a `channel` (name) parameter and derive the UUID
+      // deterministically. This is stable across MCP restarts; the
+      // operator can override with `channelId` once a canonical UUID is
+      // allocated by the relay. This is the wire-shape bug fix (PR-7).
+      if (!args.channel && !args.channelId) {
+        throw new Error("buzz_add_member: either `channel` (name) or `channelId` (UUID) is required");
+      }
+      const channelId = args.channelId ?? channelNameToUuid(args.channel ?? "");
       const event = await buildAddMember({
         secret,
         pubkey: args.pubkey,
+        channelId,
         role: args.role,
       });
 
